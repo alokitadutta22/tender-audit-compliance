@@ -1,183 +1,330 @@
-<div align="center">
+# ⚡ Argus Bid AI — Automated Tender Audit & Compliance Platform
 
-# <img src="logo.jpg" alt="Argus Bid AI Logo" width="40" style="vertical-align: -8px; margin-right: 10px; border-radius: 8px;"> Argus Bid AI — Tender Audit & Compliance
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![LangChain](https://img.shields.io/badge/LangChain-Enabled-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain.com)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=for-the-badge&logo=databricks&logoColor=white)](https://www.trychroma.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-**A production-grade, deterministic AI-driven tender auditing and compliance platform for PSUs.**
-
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
-![Streamlit](https://img.shields.io/badge/Streamlit-%23FE4B4B.svg?style=for-the-badge&logo=streamlit&logoColor=white)
-![Render](https://img.shields.io/badge/Render-%2346E3B7.svg?style=for-the-badge&logo=render&logoColor=white)
-
-[Report Bug](https://github.com/alokitadutta22/Argus-Bid-AI-Tender-Audit-Compliance/issues) · [Request Feature](https://github.com/alokitadutta22/Argus-Bid-AI-Tender-Audit-Compliance/issues)
-
-</div>
+> **An enterprise-grade, deterministic AI-assisted procurement audit platform.** Automatically cross-examines hundreds of pages of vendor bid submissions against complex Notice Inviting Tender (NIT) requirements, delivering verifiable compliance matrices with page-level citations and zero hallucination risk.
 
 ---
 
-**Argus Bid AI** is a highly auditable and visually spectacular AI-driven Tender Auditing & Compliance Platform. Built specifically for Public Sector Undertakings (PSUs) like IOCL, it automates the tedious, manual process of validating vendor submissions against complex Master BID/NIT (Notice Inviting Tender) documents. It ensures rapid, bias-free evaluations while maintaining strict legal defensibility through deterministic rule-engines.
+## 📌 Table of Contents
+- [The Problem & The Solution](#-the-problem--the-solution)
+- [System Architecture](#-system-architecture)
+- [End-to-End Pipelines & Flowcharts](#-end-to-end-pipelines--flowcharts)
+  - [1. Document Ingestion & Multi-Stage Waterfall OCR](#1-document-ingestion--multi-stage-waterfall-ocr)
+  - [2. Hybrid Retrieval & Advanced RAG Flow](#2-hybrid-retrieval--advanced-rag-flow)
+  - [3. Deterministic Gate & Compliance Decision Matrix](#3-deterministic-gate--compliance-decision-matrix)
+- [Core Technical Innovations](#-core-technical-innovations)
+- [Tech Stack](#-tech-stack)
+- [Repository Structure](#-repository-structure)
+- [Getting Started](#-getting-started)
+- [Evaluation & Audit Matrix](#-evaluation--audit-matrix)
 
 ---
 
-## 🏢 Academic & Industrial Context
-
-<div align="center">
-  <img src="iocl_logo.png" alt="Indian Oil Corporation Limited Logo" width="180" style="margin-top: 10px; margin-bottom: 20px;">
-</div>
-
-> [!NOTE]
-> This platform was engineered as part of a **Software Engineering (SWE) Summer Internship** at **Indian Oil Corporation Limited (IOCL), Haldia Refinery** during my first year, second semester (June 15th, 2026 – July 13th, 2026).
->
-> 🏢 **Guidance & Compliance:** The architectural design, project structure, and enterprise compliance standards were developed under the expert guidance and explicit instructions of my supervisors in the **Information Systems (IS) Department** at IOCL, Haldia Refinery. Their mentorship was instrumental in ensuring the tool meets the rigorous demands of public sector procurement.
-
----
-
-## 🎯 Executive Overview
+## 🎯 The Problem & The Solution
 
 ### 🚨 The Problem
-
-Procurement evaluation is traditionally a manual bottleneck. Officers must manually cross-reference hundreds of pages of vendor submissions against strict Pre-Qualification Criteria (PQC), Mandatory Documents (MAFs, EMDs), and Technical Specifications. This process is slow, prone to human error, and lacks instant auditability. Black-box AI tools cannot be used because they hallucinate and lack the strict deterministic traceability required for public procurement.
+Public procurement and commercial tender auditing require verifying multiple vendor bid packages—each often spanning 100 to 500+ pages of PDFs—against strict Notice Inviting Tender (NIT) clauses. 
+- **Time Bottleneck:** Evaluation officers spend days cross-referencing PAN cards, GST certificates, audited balance sheets, technical datasheets, and Manufacturer's Authorization Forms (MAFs).
+- **Human Error & Bias:** High-volume reading leads to missed non-compliances, missed deviations, or overlooked eligibility thresholds.
+- **Why Pure Generative AI Fails:** Raw LLMs hallucinate numbers, fail at strict numeric boundaries (e.g. ₹5.0 Cr turnover vs ₹4.9 Cr), and lack legally defensible audit citations.
 
 ### 💡 The Solution
-
-Argus Bid AI transforms procurement from a manual chore into an instant, deterministic, and auditable process. By acting as a strict compliance gate, it extracts the matrix of requirements from the Master BID and cross-matches it against every vendor's submission.
-
-### ✨ Tech Innovations
-
-- **Deterministic Rule Engine:** Unlike generative AI that can hallucinate, Argus Bid AI relies on strict logic to evaluate pass/fail compliance.
-- **Explainable Audit Trails (XAI):** Every single decision, rank, or disqualification is backed by a legally defensible, traceable text snippet.
-- **100% Local Processing:** The entire platform runs completely on your local machine with zero external API calls or internet connection dependencies, ensuring absolute security.
-- **Dynamic Multi-modal OCR:** Extracts text and tables locally and effortlessly.
-
-### 🧩 Core Product Modules
-
-- **Compliance Engine:** Evaluates PQC, MAFs, and Mandatory Documents based on extracted constraints.
-- **Comparative Matrix:** Automatically generates side-by-side technical comparison tables for all responsive bidders.
-- **Interactive Dashboard:** A premium, glassmorphic UI for uploading documents, running audits, and viewing explainable results.
-- **Exportable Reports:** Instantly export the entire dashboard analysis as a physical or PDF report for stakeholder review.
-
-### 🛡️ 100% Local & Secure Design
-
-The entire Argus platform is built to be **100% local, deterministic, and rule-based**. When evaluating critical compliance rules (like checking experience certificates, revenue numbers, dates, or missing mandatory documents), it uses strict programmatic logic. This prevents "AI hallucinations" and ensures that every evaluation result is legally auditable, mathematically absolute, and completely secure.
+**Argus Bid AI** combines **deterministic logic** for legal checks (regex, fixed boundary comparisons, document isolation) with **Advanced Hybrid RAG** for contextual analysis. Every decision is traceable down to the exact document, section, and page number.
 
 ---
 
-## 🚀 What Is Implemented Today
+## 🏗️ System Architecture
 
-- Full document parsing using `pdfplumber` and `pypdf`.
-- Deterministic extraction of Pre-Qualification Criteria and Mandatory Documents.
-- Explainable AI (XAI) rationale generation for all vendor rankings and disqualifications.
-- Beautiful, highly responsive, and dynamic UI built with Streamlit and custom CSS/JS injections.
-- Seamless one-click deployment using Render Blueprints.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MASTER TENDER (NIT)                            │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+                     [ Dynamic NIT Requirement Extractor ]
+             ├── Pre-Qualification Criteria (PQC: Exp, Turnover)
+             ├── Mandatory Documents Checklist (PAN, GST, MAF, etc.)
+             └── Technical Specifications (Mandatory & Preferred)
+                                       │
+                                       ▼
+                       [ AUDIT RULES ENGINE MATRIX ]
+                                       │
+           ┌───────────────────────────┴───────────────────────────┐
+           ▼                                                       ▼
+   [ Vendor Package A ]                                    [ Vendor Package B ]
+  (100s of uploaded pages)                               (100s of uploaded pages)
+           │                                                       │
+           ▼                                                       ▼
+ [ 4-Stage Waterfall OCR ]                               [ 4-Stage Waterfall OCR ]
+           │                                                       │
+           ▼                                                       ▼
+[ Batched Classification ]                              [ Batched Classification ]
+           │                                                       │
+           ▼                                                       ▼
+ [ Parent-Child Hybrid RAG ]                            [ Parent-Child Hybrid RAG ]
+           │                                                       │
+           └───────────────────────────┬───────────────────────────┘
+                                       │
+                                       ▼
+                ┌──────────────────────────────────────────────┐
+                │        FINAL COMPLIANCE SCORECARD            │
+                │  - Pass / Fail Eligibility Gates             │
+                │  - Side-by-Side Comparative Matrix           │
+                │  - Exact Page Citations & Evidence Snippets  │
+                └──────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 End-to-End Pipelines & Flowcharts
+
+### 1. Document Ingestion & Multi-Stage Waterfall OCR
+
+Uploaded vendor packages undergo a multi-layered extraction triage to balance processing speed against scanned OCR accuracy:
+
+```
+                      UPLOADED VENDOR PDF DOCUMENTS
+                   (e.g., "financials.pdf", "maf_cert.pdf")
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│                    Step 1: 4-Layer Waterfall OCR                      │
+│                                                                       │
+│  Layer 1: PyPDF         → Native digital text extraction (fastest)    │
+│  Layer 2: pdfplumber    → Precision layout and table extraction       │
+│  Layer 3: Tesseract OCR → Scanned document image OCR (CPU)            │
+│  Layer 4: EasyOCR       → Deep-learning fallback for degraded scans   │
+│                                                                       │
+│  OUTPUT: Raw cleaned text with provenance markers: "--- PAGE X ---"   │
+└───────────────────────────────────┬───────────────────────────────────┘
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│              Step 2: Batched Document Classification (LLM)            │
+│                                                                       │
+│  - Single batched LLM call inspects previews of all vendor files.     │
+│  - Classifies each into canonical doc_types (MAF, Balance Sheet, PAN) │
+│  - Prevents Cross-Contamination: Financial queries only query Balance  │
+│    Sheets, technical queries only query Datasheets.                  │
+└───────────────────────────────────┬───────────────────────────────────┘
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│                   Step 3: Parent-Child Chunking                       │
+│                                                                       │
+│  Parent Chunks: 1,000 characters (kept in RAM docstore for context)   │
+│  Child Chunks :   300 characters (embedded for high-precision search) │
+└───────────────────────────────────┬───────────────────────────────────┘
+                                    │
+                                    ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│              Step 4: Vector & Sparse Index Ingestion                  │
+│                                                                       │
+│  - Dense: all-MiniLM-L6-v2 embeddings cached via SHA-256 hashes       │
+│  - Sparse: Okapi BM25 index built over tokenized child chunks         │
+│  - Storage: In-memory ChromaDB isolated per vendor session            │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. Hybrid Retrieval & Advanced RAG Flow
+
+When validating requirements, Argus Bid AI does not run naive vector search. It enriches the prompt, conducts dual retrieval, and reranks candidate passages:
+
+```
+                               RAW AUDIT QUERY
+                       "Verify average annual turnover"
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      Step 1: Query Enrichment                         │
+│                                                                        │
+│  • Numerical / Financial checks (PQC, Turnover, Exp):                  │
+│    → HyDE (Hypothetical Document Embeddings): LLM generates a          │
+│      mock CA-certified balance sheet paragraph to embed.               │
+│                                                                        │
+│  • Spec & Entity checks (MAF, Datasheet, Deviation):                   │
+│    → Query Expansion: LLM enriches query with domain terminology,      │
+│      procurement acronyms (OEM, GFR, MSE), and synonyms.               │
+└──────────────────────────────────────┬─────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Step 2: Filtered Dual Search                    │
+│                                                                        │
+│  • Filter: Constrained to target doc_type collection only              │
+│  • Dense Search : Cosine similarity over child chunk vectors (Chroma)  │
+│  • Sparse Search: Okapi BM25 keyword matching over tokenized chunks    │
+└──────────────────────────────────────┬─────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Step 3: Reciprocal Rank Fusion (RRF)                 │
+│                                                                        │
+│  Merges dense & sparse rankings using RRF constant (k = 60):          │
+│                    Score = Σ 1 / (k + rank)                           │
+│  → Yields pooled candidate set (~15 chunks)                            │
+└──────────────────────────────────────┬─────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Step 4: Cross-Encoder Reranking                      │
+│                                                                        │
+│  • Model: cross-encoder/ms-marco-MiniLM-L-6-v2                         │
+│  • Evaluates [Original Raw Query + Candidate Chunk] as a joint pair.   │
+│  • Produces deep cross-attention semantic scores and picks top k.      │
+└──────────────────────────────────────┬─────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      Step 5: Parent Resolution                         │
+│                                                                        │
+│  Small child chunks (300 chars) are mapped back to their enclosing    │
+│  parent chunks (1,000 chars) to provide complete context to the LLM.   │
+└──────────────────────────────────────┬─────────────────────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Step 6: LLM Audit Verification                      │
+│                                                                        │
+│  LLM reviews verified context, extracts actual vendor values, evaluates│
+│  pass/fail against NIT rule, and outputs structured JSON rationale.    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. Deterministic Gate & Compliance Decision Matrix
+
+```
+                     VENDOR EVALUATION PIPELINE
+                                  │
+                                  ▼
+                     [ Gate 1: Mandatory Checklist ]
+               Did the vendor provide all mandatory documents?
+                    ├── NO  → REJECTED (Missing Critical File)
+                    └── YES → Proceed
+                                  │
+                                  ▼
+                       [ Gate 2: MAF Validation ]
+                   Is the OEM MAF present & valid?
+                    ├── NO  → REJECTED (Missing / Invalid MAF)
+                    └── YES → Proceed
+                                  │
+                                  ▼
+                       [ Gate 3: PQC Thresholds ]
+         Experience ≥ Required? & Turnover ≥ Required? (Numeric)
+                    ├── NO  → REJECTED (Failed Pre-Qualification)
+                    └── YES → Proceed
+                                  │
+                                  ▼
+                     [ Gate 4: Technical Specs & Deviations ]
+             Evaluate Mandatory Specs & Detect Unapproved Deviations
+                                  │
+                                  ▼
+               ┌─────────────────────────────────────┐
+               │    WEIGHTED RESPONSIVENESS SCORE    │
+               │         Score ∈ [0, 100%]           │
+               └─────────────────────────────────────┘
+```
+
+---
+
+## 💡 Core Technical Innovations
+
+| Feature | Technical Implementation | Benefit |
+| :--- | :--- | :--- |
+| **Document Triage** | Regex for deterministic tokens (PAN, GSTIN); LLM for semantic verification | 0 ms instant verification for deterministic patterns; avoids LLM token waste. |
+| **Cross-Contamination Firewall** | Files classified into categories (`DOC_TYPES`) before vector indexing | A query about turnover will never accidentally match a number in a technical spec sheet. |
+| **Parent-Child Chunking** | 300-char children for indexing, 1000-char parents for context window | High-precision vector cosine matching without losing surrounding context. |
+| **Hybrid RAG + RRF** | Dense Chroma embeddings + Okapi BM25 merged via Reciprocal Rank Fusion | Overcomes dense embedding blind spots for specific technical part numbers. |
+| **HyDE Query Translation** | LLM creates hypothetical document paragraphs before embedding | Bridges the semantic gap between short queries and legal-style vendor certificates. |
+| **Cross-Encoder Rerank** | `ms-marco-MiniLM-L-6-v2` sequence-pair reranking | Replaces approximate distance metrics with full bidirectional token attention. |
+| **Evidence Provenance** | Every chunk carries `{ "source": file, "page": page_number }` metadata | Every pass/fail verdict includes exact page numbers and verbatim text citations. |
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Category                | Technology         | Details                                                                 |
-| :---------------------- | :----------------- | :---------------------------------------------------------------------- |
-| **Frontend & UI**       | Streamlit          | High-performance, pure-Python UI framework.                             |
-|                         | Custom CSS/JS      | Premium glassmorphic styling, animations, and dynamic DOM manipulation. |
-| **Backend Logic**       | Python 3.11        | Core logic, data processing, and document handling.                     |
-| **Document Processing** | pdfplumber & pypdf | Robust text extraction from complex PDFs.                               |
-| **Deployment**          | Render             | Native Python Web Service for secure, iframe-free hosting.              |
-
----
-
-## 🏗️ Architecture & Decoupled Design
-
-Argus Bid AI is designed with a modular, decoupled architecture to separate logic from presentation, making it scalable, maintainable, and independently testable:
-
-1. **Presentation Layer (`ui_styles.py` & `tender_audit_platform.py`):**
-   - **`ui_styles.py`**: A dedicated styling module providing custom CSS injections, CSS animations, and premium glassmorphic UI components (custom HTML cards, KPI tiles, progress bars, and document status cards).
-   - **`tender_audit_platform.py`**: Streamlined Streamlit frontend that orchestrates the overall application layout, file upload handlers, session state routing, and interactive page views.
-2. **Evaluation & Processing Layer (`audit_engine.py`):**
-   - **`audit_engine.py`**: A pure, zero-UI dependency backend containing the rules dictionary, mock databases, rule extraction parser logic, and vendor audit evaluation functions. Because it is completely decoupled from Streamlit, it can run as an independent background script or be integrated into command-line tooling.
+- **Core & Runtime:** Python 3.11
+- **UI Framework:** Streamlit with custom glassmorphism styles (`ui_styles.py`)
+- **Document Parsing & OCR:** `pdfplumber`, `pypdf`, `pytesseract`, `easyocr`
+- **Vector Database:** `ChromaDB` (In-memory, session-isolated)
+- **Sparse Search:** `rank-bm25` (Okapi BM25)
+- **Embedding & Reranker Models:**
+  - Embeddings: HuggingFace `sentence-transformers/all-MiniLM-L6-v2` (Local CPU) / Gemini Cloud Embeddings
+  - Reranker: `cross-encoder/ms-marco-MiniLM-L-6-v2`
+- **LLM Engine:** LangChain supporting Local LLMs (via Ollama: Llama-3, Qwen) or Cloud APIs (Google Gemini, Groq, Anthropic Claude)
 
 ---
 
 ## 📂 Repository Structure
 
 ```
-Argus-Bid-AI-Tender-Audit-Compliance/
-├── tender_audit_platform.py    # Main Streamlit UI layout & dashboard routing
-├── audit_engine.py             # Pure Python audit logic (Zero UI dependencies)
-├── ui_styles.py                # Premium CSS styling, animations, & HTML renderers
-├── requirements.txt            # Python dependencies
-├── render.yaml                 # Render Blueprint for 1-click deployment
-├── run.bat                     # Windows startup script for local dev
-├── .gitignore                  # Ignored files and local caches
-└── README.md                   # Project documentation
+tender-audit-compliance/
+├── tender_audit_platform.py         # Main interactive Streamlit application
+├── audit_engine.py                  # Deterministic compliance rules engine & gates
+├── rag_engine.py                    # Hybrid RAG, ParentDocumentRetriever, HyDE, Reranker
+├── ui_styles.py                     # Custom CSS, glassmorphic UI cards, KPI metrics
+├── requirements.txt                 # Project dependencies
+├── run.bat                          # Quick-launch Windows executable script
+├── render.yaml                      # Cloud web deployment blueprint
+├── interview_qs.md                  # Comprehensive interview preparation guide
+├── important_questions_from_a_project.md # Technical deep-dive Q&A documentation
+└── presentation_guide.md            # Architecture walkthrough & demonstration script
 ```
-
 
 ---
 
-## 💻 Local Setup
+## 🚀 Getting Started
 
-### Prerequisites
+### 1. Prerequisites
+- Python 3.10 or 3.11 installed
+- (Optional for scanned PDFs) Tesseract OCR installed on your system
+- (Optional for local LLMs) Ollama running locally with `llama3` or `qwen2.5`
 
-- [Python 3.8+](https://www.python.org/)
-- [Git](https://git-scm.com/)
-
-### 1. Clone the Repository
-
+### 2. Installation
 ```bash
-git clone https://github.com/alokitadutta22/Argus-Bid-AI-Tender-Audit-Compliance.git
-cd Argus-Bid-AI-Tender-Audit-Compliance
+# Clone the repository
+git clone https://github.com/alokitadutta22/tender-audit-compliance.git
+cd tender-audit-compliance
+
+# Create and activate a virtual environment
+python -m venv venv
+# On Windows:
+venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### 2. Install Dependencies & Run
-
-**Using the Batch Script (Windows):**
-Simply double-click the `run.bat` file. It will silently install dependencies and launch the platform.
-
-**Manual Setup (Mac/Linux/Windows):**
-
+### 3. Run the Platform
 ```bash
-pip install -r requirements.txt
 streamlit run tender_audit_platform.py
 ```
-
-The application will be accessible at `http://localhost:8501`.
-
----
-
-## 🔒 Security Notes
-
-- **Data Privacy:** All document parsing and deterministic auditing is done in-memory. Uploaded sensitive tender documents are processed 100% locally and are not persisted or sent to any public server.
+Or simply double-click **`run.bat`** on Windows.
 
 ---
 
-## ☁️ Deployment (Render)
+## 📊 Evaluation & Audit Matrix
 
-This project is fully configured for a secure, native deployment on **Render**.
-
-### 1-Click Deploy
-
-1. Create an account at [Render.com](https://render.com).
-2. Go to your Dashboard -> **New +** -> **Blueprint**.
-3. Connect your GitHub repository.
-4. Render will detect the `render.yaml` file and instantly deploy the application as a native Python Web Service.
+When an audit is executed, Argus Bid AI renders:
+1. **Executive Eligibility Banner:** Immediate Qualified / Disqualified status with failure rationale.
+2. **Pre-Qualification Criteria (PQC) Table:** Min Experience, Average Annual Turnover, and GeM registration status.
+3. **Mandatory Documents Checklist:** Status of required forms with detected document links.
+4. **Technical Specifications Matrix:** Parameter-by-parameter audit against NIT requirements.
+5. **Auditable Evidence Dossier:** Verbatim textual evidence with direct PDF page-number citations.
 
 ---
 
-## 🗺️ Roadmap
-
-- [ ] Integration with advanced Document Intelligence for superior scanned-handwriting OCR.
-- [ ] Multi-tenant support for different PSU departments.
-- [ ] Export to Excel (.xlsx) functionality for the Comparative Matrix.
-
----
-
-**Alokita Dutta**
-
-Current Maintainer
-LinkedIn: [https://www.linkedin.com/in/alokitadutta](https://www.linkedin.com/in/alokitadutta)  
-GitHub: [@alokitadutta22](https://github.com/alokitadutt22)
-
-Contributors:
-
-**Debdatta Panda**  
-Initial development, platform architecture, and implementation
-LinkedIn: [https://www.linkedin.com/in/debdatta-panda-dp11](https://www.linkedin.com/in/debdatta-panda-dp11)  
-GitHub: [@MyselfDebdatta](https://github.com/MyselfDebdatta)
+<div align="center">
+  <sub>Developed by <b>Alokita Dutta</b> • Designed for Deterministic, Trustworthy AI in Public Procurement</sub>
+</div>
