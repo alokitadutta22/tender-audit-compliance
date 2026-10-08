@@ -2,10 +2,10 @@
 echo ==================================================
 echo Installing Dependencies...
 echo ==================================================
-pip install -q -r requirements.txt >nul 2>&1
+py -3.11 -m pip install -r requirements.txt
 echo.
 echo ==================================================
 echo Starting Argus Bid AI...
 echo ==================================================
-streamlit run tender_audit_platform.py
+py -3.11 -m streamlit run tender_audit_platform.py
 pause

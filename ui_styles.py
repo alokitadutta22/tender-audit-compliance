@@ -31,17 +31,17 @@ from audit_engine import (
 )
 
 PALETTE = {
-    "ink": "#121214",       # neutral carbon off-black
-    "panel": "#1A1A1E",     # warm slate charcoal panel
-    "panel2": "#242429",    # nested sub-panels
-    "line": "#2E2E33",      # borders and dividers
-    "muted": "#8E8E93",     # Apple-like secondary text
-    "text": "#EAEAEA",      # crisp warm off-white primary text
-    "blue": "#7B92FF",      # soft periwinkle blue / slate purple accent (non-neon)
-    "blue_dk": "#5856D6",   # deep accent color
-    "green": "#98C1A9",     # soft organic mint/sage green (non-neon)
-    "amber": "#D9A05B",     # soft warm gold/amber
-    "red": "#D07A7A",       # soft rose/coral red
+    "ink": "#211119",       # Deep eggplant/berry cassis base
+    "panel": "#351E28",     # Cassis panel
+    "panel2": "#442734",    # Cassis nested sub-panels
+    "line": "#593646",      # Eggplant border lines
+    "muted": "#AEB8A0",     # Vert Sauge (sage green) muted text
+    "text": "#FDF2F8",      # Crisp cassis off-white text
+    "blue": "#E9F056",      # Wasabi yellow-green primary accent
+    "blue_dk": "#C6CD3E",   # Darker Wasabi for active hover
+    "green": "#D7EFFF",     # Cool Blue success/highlight color
+    "amber": "#FF5C34",     # Orange Topaze warning color
+    "red": "#FF5C34",       # Orange Topaze danger/error color
 }
 
 CSS = """
@@ -50,19 +50,47 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --ink:#121214; --panel:#1A1A1E; --panel2:#242429; --line:#2E2E33;
-  --muted:#8E8E93; --text:#EAEAEA; --blue:#7B92FF; --blue-dk:#5856D6;
-  --green:#98C1A9; --amber:#D9A05B; --red:#D07A7A;
+  --ink:#211119; --panel:#351E28; --panel2:#442734; --line:#593646;
+  --muted:#AEB8A0; --text:#FDF2F8; --blue:#E9F056; --blue-dk:#C6CD3E;
+  --green:#D7EFFF; --amber:#FF5C34; --red:#FF5C34;
 }
 html, body, [class*="css"], [data-testid="stSidebar"]  { font-family:'Outfit','Space Grotesk',sans-serif; }
 h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
   font-family:'Surgena Personal use only SemBd', 'Space Grotesk', 'Outfit', sans-serif !important;
 }
 
-.stApp { background:
-   radial-gradient(1200px 500px at 80% -10%, rgba(123,146,255,.07), transparent 60%),
-   var(--ink); color:var(--text); }
-.block-container { padding-top: 0rem !important; margin-top: 0 !important; max-width: 1280px; }
+.stApp {
+  position: relative;
+  background: 
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.025'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 80% 20%, rgba(233, 240, 86, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 20% 10%, rgba(215, 239, 255, 0.1) 0%, transparent 45%),
+    radial-gradient(circle at 70% 80%, rgba(255, 92, 52, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 10% 70%, rgba(174, 184, 160, 0.06) 0%, transparent 50%),
+    var(--ink);
+  color: var(--text);
+}
+.stApp::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle 320px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(233, 240, 86, 0.08) 0%, rgba(215, 239, 255, 0.04) 40%, transparent 80%),
+    url("data:image/svg+xml,%3Csvg width='16' height='16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 8H8M8 8V0M8 8H16M8 8V16' stroke='rgba(215, 239, 255, 0.04)' stroke-width='1'/%3E%3Crect x='7' y='7' width='2' height='2' fill='rgba(215, 239, 255, 0.08)'/%3E%3C/svg%3E");
+  z-index: -1 !important;
+  pointer-events: none;
+}
+.stAppViewContainer, [data-testid="stAppViewContainer"] {
+  position: relative !important;
+  z-index: 10 !important;
+}
+.block-container {
+  position: relative !important;
+  z-index: 20 !important;
+  padding-top: 0rem !important;
+  margin-top: 0 !important;
+  max-width: 98% !important;
+}
 #MainMenu, footer, .stDeployButton { display: none !important; }
 [data-testid="stHeader"] { background: transparent !important; }
 [data-testid="stSidebar"] { background:var(--panel); border-right:1px solid var(--line); color:var(--text) !important; }
@@ -70,28 +98,28 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 [data-testid="stSidebar"] hr, [data-testid="stMain"] hr {
     border: none !important;
     height: 1px !important;
-    background: linear-gradient(90deg, transparent, rgba(123, 146, 255, 0.25), transparent) !important;
+    background: linear-gradient(90deg, transparent, rgba(233, 240, 86, 0.25), transparent) !important;
     margin: 28px 0 !important;
 }
 
 /* ---- masthead ---- */
 .masthead {
-    border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 32px 40px;
-    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.015), rgba(255,255,255,0.015) 1px, transparent 1px, transparent 8px), linear-gradient(160deg, rgba(26, 26, 30, 0.9) 0%, rgba(38, 38, 43, 0.6) 100%);
-    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    border: none; border-radius: 0; padding: 16px 0;
+    background: transparent;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none;
     display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 36px;
-    position: relative; overflow: hidden;
-    border-bottom: 2px solid var(--blue);
+    position: relative; overflow: visible;
+    border-bottom: 1px solid var(--line);
 }
 .masthead::before {
     content: ""; position: absolute; top: -100px; right: -100px; width: 350px; height: 350px;
-    background: radial-gradient(circle, rgba(123,146,255,0.12) 0%, transparent 70%);
+    background: transparent;
     filter: blur(30px); border-radius: 50%; z-index: 0; pointer-events: none;
 }
 .masthead::after {
     content: ""; position: absolute; bottom: -100px; left: -100px; width: 250px; height: 250px;
-    background: radial-gradient(circle, rgba(123,146,255,0.08) 0%, transparent 70%);
+    background: transparent;
     filter: blur(30px); border-radius: 50%; z-index: 0; pointer-events: none;
 }
 .masthead .mark { display: flex; align-items: flex-start; gap: 24px; z-index: 1; }
@@ -100,7 +128,7 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
     position: relative; padding: 2px;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; z-index: 2;
-    background: #1A1A1E; overflow: hidden;
+    background: #351E28; overflow: hidden;
 }
 .masthead .glyph {
     width: 68px; height: 68px; margin-top: 22px;
@@ -118,7 +146,7 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 }
 .masthead .glyph::after, .sidebar-glyph::after, .small-glyph::after {
     content: ''; position: absolute; inset: 2px;
-    background: #1A1A1E; border-radius: 14px; z-index: 0;
+    background: #351E28; border-radius: 14px; z-index: 0;
 }
 .sidebar-glyph::after { border-radius: 10px; }
 .small-glyph::after { border-radius: 6px; }
@@ -247,22 +275,22 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 .ef-emerald:hover { background: rgba(152, 193, 169, 0.08); border-color: rgba(152, 193, 169, 0.3); color: #F1F5F9; }
 .ef-emerald:hover svg { filter: drop-shadow(0 0 8px rgba(152, 193, 169, 0.8)); transform: scale(1.1); }
 
-.ef-purple svg { color: var(--blue); filter: drop-shadow(0 0 4px rgba(123, 146, 255, 0.4)); transition: all 0.2s; }
-.ef-purple:hover { background: rgba(123, 146, 255, 0.08); border-color: rgba(123, 146, 255, 0.3); color: #F1F5F9; }
-.ef-purple:hover svg { filter: drop-shadow(0 0 8px rgba(123, 146, 255, 0.8)); transform: scale(1.1); }
+.ef-purple svg { color: var(--blue); filter: drop-shadow(0 0 4px rgba(233, 240, 86, 0.4)); transition: all 0.2s; }
+.ef-purple:hover { background: rgba(233, 240, 86, 0.08); border-color: rgba(233, 240, 86, 0.3); color: #F1F5F9; }
+.ef-purple:hover svg { filter: drop-shadow(0 0 8px rgba(233, 240, 86, 0.8)); transform: scale(1.1); }
 
 .ef-amber svg { color: var(--amber); filter: drop-shadow(0 0 4px rgba(217, 160, 91, 0.4)); transition: all 0.2s; }
 .ef-amber:hover { background: rgba(217, 160, 91, 0.08); border-color: rgba(217, 160, 91, 0.3); color: #F1F5F9; }
 .ef-amber:hover svg { filter: drop-shadow(0 0 8px rgba(217, 160, 91, 0.8)); transform: scale(1.1); }
 
-.ef-blue svg { color: var(--blue); filter: drop-shadow(0 0 4px rgba(123, 146, 255, 0.4)); transition: all 0.2s; }
-.ef-blue:hover { background: rgba(123, 146, 255, 0.08); border-color: rgba(123, 146, 255, 0.3); color: #F1F5F9; }
-.ef-blue:hover svg { filter: drop-shadow(0 0 8px rgba(123, 146, 255, 0.8)); transform: scale(1.1); }
+.ef-blue svg { color: var(--blue); filter: drop-shadow(0 0 4px rgba(233, 240, 86, 0.4)); transition: all 0.2s; }
+.ef-blue:hover { background: rgba(233, 240, 86, 0.08); border-color: rgba(233, 240, 86, 0.3); color: #F1F5F9; }
+.ef-blue:hover svg { filter: drop-shadow(0 0 8px rgba(233, 240, 86, 0.8)); transform: scale(1.1); }
 .tender-chip {
     font-family: 'JetBrains Mono', monospace; font-size: 13.5px; font-weight: 700;
-    background: rgba(123, 146, 255, 0.1); border: 1px solid rgba(123, 146, 255, 0.25);
+    background: rgba(233, 240, 86, 0.1); border: 1px solid rgba(233, 240, 86, 0.25);
     color: var(--blue); padding: 10px 18px; border-radius: 12px;
-    box-shadow: inset 0 0 16px rgba(123, 146, 255, 0.05); z-index: 1;
+    box-shadow: inset 0 0 16px rgba(233, 240, 86, 0.05); z-index: 1;
 }
 
 /* ---- KPI tiles ---- */
@@ -303,14 +331,12 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 .eyebrow .rule { flex:1; height:1px; background:var(--line); }
 
 /* ---- leaderboard ---- */
-.lb { width:100%; border-collapse:separate; border-spacing:0 8px; }
+.lb { width:100%; border-collapse: collapse; }
 .lb th { text-align:left; color:var(--muted); font-size:11px; text-transform:uppercase;
-   letter-spacing:.7px; padding:0 16px 4px; font-weight:600; }
-.lb td { background:var(--panel); border-top:1px solid var(--line);
-   border-bottom:1px solid var(--line); padding:14px 16px; vertical-align:middle; }
-.lb tr td:first-child { border-left:1px solid var(--line); }
-.lb tr td:last-child { border-right:1px solid var(--line); }
-.lb tr.dq td { background:rgba(239,68,68,.06); }
+   letter-spacing:.7px; padding:12px 16px; font-weight:600; border-bottom: 1px solid var(--line); }
+.lb td { border-bottom:1px solid var(--line); padding:14px 16px; vertical-align:middle; }
+.lb tr:hover td { background: rgba(255,255,255,0.015); }
+.lb tr.dq td { background: rgba(239,68,68,.03); }
 .rank-badge {
     display: inline-flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; border-radius: 8px; font-size: 13.5px; font-weight: 800;
@@ -318,15 +344,15 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 }
 .rank-1 { background: linear-gradient(135deg, rgba(251,191,36,0.15), rgba(251,191,36,0.05)); border: 1px solid rgba(251,191,36,0.3); color: #FBBF24; box-shadow: 0 0 12px rgba(251,191,36,0.1); }
 .rank-2 { background: linear-gradient(135deg, rgba(148,163,184,0.15), rgba(148,163,184,0.05)); border: 1px solid rgba(148,163,184,0.3); color: #CBD5E1; box-shadow: 0 0 12px rgba(148,163,184,0.1); }
-.rank-3 { background: linear-gradient(135deg, rgba(180,83,9,0.15), rgba(180,83,9,0.05)); border: 1px solid rgba(180,83,9,0.3); color: #D97706; box-shadow: 0 0 12px rgba(180,83,9,0.1); }
+.rank-3 { background: linear-gradient(135deg, rgba(180,83,9,0.15), rgba(180,83,9,0.05)); border: 1px solid rgba(180,83,9,0.3); color: #C6CD3E; box-shadow: 0 0 12px rgba(180,83,9,0.1); }
 .rank-other { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); color: #64748B; }
 .vname { font-weight:700; font-size:14.5px; }
 .vmeta { color:var(--muted); font-size:12px; margin-top:2px; }
 
 /* ---- bid map ---- */
 .map-sec {
-    color: #B5C2FF; font-size: 13px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 1px; margin: 24px 0 12px; border-bottom: 1px solid rgba(123,146,255,0.2);
+    color: #FFFFFF; font-size: 13px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 1px; margin: 24px 0 12px; border-bottom: 1px solid rgba(233,240,86,0.2);
     padding-bottom: 8px;
 }
 .map-sec:first-child { margin-top: 8px; }
@@ -368,6 +394,8 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 .glass-panel[open] summary { border-bottom: 1px solid rgba(255,255,255,0.06); }
 .glass-panel .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 20px; }
 @media (max-width: 768px) { .glass-panel .grid-2 { grid-template-columns: 1fr; } }
+.glass-panel .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; padding: 20px; }
+@media (max-width: 992px) { .glass-panel .grid-3 { grid-template-columns: 1fr; } }
 
 /* ---- st.expander overrides ---- */
 [data-testid="stExpander"] details {
@@ -388,7 +416,7 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
     font-size: 15px; font-weight: 700; color: #E2E8F0; letter-spacing: 0.3px;
 }
 [data-testid="stExpander"] summary svg {
-    color: #B5C2FF;
+    color: #FFFFFF;
 }
 
 /* ---- status pills ---- */
@@ -401,7 +429,7 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 .pill.warn::before{ background:var(--amber); }
 .pill.bad { background:rgba(239,68,68,.12); color:var(--red); }
 .pill.bad::before{ background:var(--red); }
-.pill.info{ background:rgba(123,146,255,.12); color:var(--blue); }
+.pill.info{ background:rgba(233,240,86,.12); color:var(--blue); }
 .pill.info::before{ background:var(--blue); }
 
 /* ---- glowing svg badges ---- */
@@ -430,25 +458,25 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
     color: var(--muted); border-color: rgba(142, 142, 147, 0.3);
 }
 .bg-blue {
-    background: linear-gradient(90deg, rgba(123, 146, 255, 0.15), rgba(123, 146, 255, 0.05));
-    color: var(--blue); border-color: rgba(123, 146, 255, 0.3);
-    box-shadow: 0 0 12px rgba(123, 146, 255, 0.1);
+    background: linear-gradient(90deg, rgba(233, 240, 86, 0.15), rgba(233, 240, 86, 0.05));
+    color: var(--blue); border-color: rgba(233, 240, 86, 0.3);
+    box-shadow: 0 0 12px rgba(233, 240, 86, 0.1);
 }
 
 /* ---- primary buttons ---- */
 [data-testid="stButton"] button[kind="primary"] {
-    background: linear-gradient(135deg, rgba(123, 146, 255, 0.15), rgba(123, 146, 255, 0.05));
+    background: linear-gradient(135deg, rgba(233, 240, 86, 0.15), rgba(233, 240, 86, 0.05));
     color: var(--blue);
-    border: 1px solid rgba(123, 146, 255, 0.3);
+    border: 1px solid rgba(233, 240, 86, 0.3);
     border-radius: 8px;
-    box-shadow: 0 0 12px rgba(123, 146, 255, 0.1);
+    box-shadow: 0 0 12px rgba(233, 240, 86, 0.1);
     transition: all 0.2s ease;
 }
 [data-testid="stButton"] button[kind="primary"]:hover {
-    background: linear-gradient(135deg, rgba(123, 146, 255, 0.2), rgba(123, 146, 255, 0.1));
-    box-shadow: 0 0 16px rgba(123, 146, 255, 0.25);
-    border-color: rgba(123, 146, 255, 0.6);
-    color: #B5C2FF;
+    background: linear-gradient(135deg, rgba(233, 240, 86, 0.2), rgba(233, 240, 86, 0.1));
+    box-shadow: 0 0 16px rgba(233, 240, 86, 0.25);
+    border-color: rgba(233, 240, 86, 0.6);
+    color: #FFFFFF;
 }
 [data-testid="stButton"] button[kind="primary"] p {
     font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 700;
@@ -483,8 +511,8 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
 .viol .vt { font-weight:700; color:var(--red); font-size:13px; margin-bottom:6px; }
 .viol .row { font-size:12.5px; margin:4px 0; }
 .viol .k { color:var(--muted); }
-.xai { background:linear-gradient(135deg, rgba(123, 146, 255, 0.08), transparent);
-   border:1px solid rgba(123, 146, 255, 0.3); border-radius:12px; padding:16px 18px; margin:10px 0;
+.xai { background:linear-gradient(135deg, rgba(233, 240, 86, 0.08), transparent);
+   border:1px solid rgba(233, 240, 86, 0.3); border-radius:12px; padding:16px 18px; margin:10px 0;
    font-size:13.5px; line-height:1.65; }
 .matrix { width:100%; border-collapse:collapse; font-size:13px; }
 .matrix th { text-align:left; color:var(--muted); font-size:11px; text-transform:uppercase;
@@ -529,6 +557,118 @@ h1, h2, h3, h4, h5, h6, .sys-status, .tender-chip, .sidebar-glyph {
     .block-container { padding-top: 0 !important; margin-top: 0 !important; }
     .masthead, .panel, .kpi, .lb tr { page-break-inside: avoid; }
 }
+
+/* ---- Text Loop & Dock Styles ---- */
+.text-loop-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14.5px;
+    color: var(--muted);
+    font-weight: 500;
+}
+.text-loop {
+    display: inline-block;
+    position: relative;
+    height: 20px;
+    width: 140px;
+    overflow: hidden;
+    vertical-align: bottom;
+}
+.text-loop .word {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    transform: translateY(20px) rotateX(90deg);
+    animation: rotate-word 12s infinite;
+    color: var(--blue);
+    font-weight: 700;
+    white-space: nowrap;
+}
+.text-loop .word:nth-child(1) { animation-delay: 0s; }
+.text-loop .word:nth-child(2) { animation-delay: 3s; }
+.text-loop .word:nth-child(3) { animation-delay: 6s; }
+.text-loop .word:nth-child(4) { animation-delay: 9s; }
+
+@keyframes rotate-word {
+    0% { opacity: 0; transform: translateY(20px) rotateX(90deg); filter: blur(4px); }
+    3% { opacity: 1; transform: translateY(0) rotateX(0deg); filter: blur(0px); }
+    25% { opacity: 1; transform: translateY(0) rotateX(0deg); filter: blur(0px); }
+    28% { opacity: 0; transform: translateY(-20px) rotateX(-90deg); filter: blur(4px); }
+    100% { opacity: 0; transform: translateY(-20px) rotateX(-90deg); filter: blur(4px); }
+}
+
+/* Apple Style Navigation Dock */
+.dock-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99999;
+}
+.dock {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    background: rgba(21, 15, 36, 0.4);
+    border: 1px solid rgba(233, 240, 86, 0.15);
+    padding: 10px 18px;
+    border-radius: 9999px;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    transition: all 0.3s ease;
+}
+.dock:hover {
+    background: rgba(21, 15, 36, 0.7);
+    border-color: rgba(233, 240, 86, 0.35);
+}
+.dock-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+}
+.dock-icon {
+    font-size: 20px;
+    transition: transform 0.2s ease;
+}
+.dock-item:hover {
+    transform: scale(1.3) translateY(-10px);
+    background: rgba(233, 240, 86, 0.1);
+    border-color: rgba(233, 240, 86, 0.4);
+}
+.dock-label {
+    position: absolute;
+    top: -45px;
+    background: rgba(21, 15, 36, 0.95);
+    border: 1px solid rgba(233, 240, 86, 0.25);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.2s ease;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.dock-item:hover .dock-label {
+    opacity: 1;
+    transform: translateY(0);
+}
 </style>
 """
 
@@ -542,91 +682,9 @@ def get_base64_image(path: str) -> str:
     except Exception:
         return ""
 
-
 def inject_custom_loading_screen():
-    """Modifies the Streamlit index.html file to inject the custom glassmorphic Argus Bid AI loader."""
-    try:
-        streamlit_dir = os.path.dirname(st.__file__)
-        index_path = os.path.join(streamlit_dir, 'static', 'index.html')
-        with open(index_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-            
-        # Restore index.html to pristine state by stripping previous loaders
-        if '<body>' in html_content and '<noscript>' in html_content:
-            head_part, body_part = html_content.split('<body>', 1)
-            _, noscript_part = body_part.split('<noscript>', 1)
-            html_content = head_part + '<body>\n    <noscript>' + noscript_part
-            
-        # Get Logo base64
-        logo_b64 = get_base64_image("logo.jpg")
-        img_html = f'<img style="width: 100%; height: 100%; object-fit: cover;" src="data:image/jpeg;base64,{logo_b64}">' if logo_b64 else ''
-        
-        # Inject new loader HTML/CSS/JS
-        loader_html = f"""
-        <!-- ARGUS-LOADER-START -->
-        <div id="custom-argus-loader" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #121214; z-index: 9999999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Outfit', sans-serif; transition: opacity 0.4s ease-out, visibility 0.4s ease-out; overflow: hidden;">
-            <div style="position: absolute; inset: 0; background-image: linear-gradient(rgba(123, 146, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(123, 146, 255, 0.03) 1px, transparent 1px); background-size: 30px 30px; z-index: 0;"></div>
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 300px; height: 300px; background: rgba(123, 146, 255, 0.06); filter: blur(80px); border-radius: 50%; z-index: 0; animation: pulseGlow 4s infinite alternate;"></div>
-            
-            <div style="position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center;">
-                
-                <div style="position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; margin-bottom: 40px; transform: scale(1.1);">
-                    <div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #7B92FF, rgba(123,146,255,0.05) 25%, #98C1A9, rgba(152,193,169,0.05) 75%, #7B92FF); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(123, 146, 255, 0.25), inset 0 0 20px rgba(152, 193, 169, 0.1);">
-                        <div style="position: absolute; inset: 3px; background: #121214; border-radius: 33px; z-index: 1;"></div>
-                    </div>
-                    <div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(123, 146, 255, 0.2); animation: spin 15s linear infinite reverse; z-index: 0;"></div>
-                    <div style="position: absolute; inset: -10px; border-radius: 40px; border: 1px solid rgba(152, 193, 169, 0.2); animation: spin 10s linear infinite; z-index: 0;"></div>
-                    <div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #1A1A1E; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
-                        {img_html}
-                    </div>
-                </div>
-                
-                <h2 style="margin: 0 0 12px 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; font-family: 'Surgena Personal use only SemBd', 'Space Grotesk', sans-serif; background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%); -webkit-background-clip: text; color: transparent;">Argus Bid AI</h2>
-                <div style="width: 200px; height: 4px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; margin-bottom: 12px; position: relative;">
-                    <div style="position: absolute; top:0; left:0; height: 100%; width: 50%; background: linear-gradient(90deg, #7B92FF, #98C1A9); border-radius: 4px; animation: progress 2s ease-in-out infinite alternate;"></div>
-                </div>
-                <p style="color: #94A3B8; margin: 0; font-size: 13px; font-family: monospace; letter-spacing: 1px; text-transform: uppercase;">
-                    <span style="color: #7B92FF; margin-right: 8px;">></span> <span class="typing-text">Initializing engine...</span>
-                </p>
-            </div>
-            <style>
-                @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
-                @keyframes pulseGlow {{ 0% {{ opacity: 0.5; transform: translate(-50%, -50%) scale(0.8); }} 100% {{ opacity: 1; transform: translate(-50%, -50%) scale(1.1); }} }}
-                @keyframes progress {{ 0% {{ width: 10%; left: 0; }} 100% {{ width: 40%; left: 60%; }} }}
-            </style>
-            <script>
-                const removeLoader = () => {{
-                    const l = document.getElementById('custom-argus-loader');
-                    if(l) {{
-                        l.style.opacity = '0';
-                        l.style.visibility = 'hidden';
-                        setTimeout(()=>l.remove(), 500);
-                    }}
-                }};
-                
-                let checkCount = 0;
-                const checkReady = setInterval(() => {{
-                    const visibleText = document.querySelectorAll('[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] h1, [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3');
-                    if ((visibleText && visibleText.length > 0) || checkCount > 60) {{
-                        clearInterval(checkReady);
-                        setTimeout(removeLoader, 300);
-                    }}
-                    checkCount++;
-                }}, 250);
-                
-                setTimeout(removeLoader, 15000);
-
-                const texts = ["Authenticating secure uplink...", "Loading compliance matrix...", "Calibrating NLP tensors...", "Initializing engine..."];
-                let idx = 0; setInterval(() => {{ const el = document.querySelector('.typing-text'); if(el) {{ el.innerText = texts[idx % texts.length]; idx++; }} }}, 800);
-            </script>
-        </div>
-        <!-- ARGUS-LOADER-END -->
-        """
-        html_content = html_content.replace('<body>', f'<body>\n{loader_html}')
-        with open(index_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-    except Exception:
-        pass
+    """Disabled to prevent static file lock/corruption issues."""
+    pass
 
 
 def format_pdf_text_to_html(text: str) -> str:
@@ -643,9 +701,9 @@ def format_pdf_text_to_html(text: str) -> str:
                 pnum = m.group(1)
                 html_out += f"""
                 <div id="page-{pnum}" class="page-divider-container" style="display: flex; align-items: center; margin: 24px 0 16px 0; padding: 4px 0;">
-                    <div style="flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(123, 146, 255, 0.3));"></div>
-                    <span style="padding: 4px 14px; background: rgba(123, 146, 255, 0.08); border: 1px solid rgba(123, 146, 255, 0.25); border-radius: 20px; font-family: 'Surgena Personal use only SemBd', 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 1px; margin: 0 12px; box-shadow: 0 0 12px rgba(123, 146, 255, 0.03);">Page {pnum}</span>
-                    <div style="flex: 1; height: 1px; background: linear-gradient(90deg, rgba(123, 146, 255, 0.3), transparent);"></div>
+                    <div style="flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(233, 240, 86, 0.3));"></div>
+                    <span style="padding: 4px 14px; background: rgba(233, 240, 86, 0.08); border: 1px solid rgba(233, 240, 86, 0.25); border-radius: 20px; font-family: 'Surgena Personal use only SemBd', 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 1px; margin: 0 12px; box-shadow: 0 0 12px rgba(233, 240, 86, 0.03);">Page {pnum}</span>
+                    <div style="flex: 1; height: 1px; background: linear-gradient(90deg, rgba(233, 240, 86, 0.3), transparent);"></div>
                 </div>
                 """
         else:
@@ -690,17 +748,31 @@ def read_pill(status: str) -> str:
 
 def spec_chip(s: SpecResult, vendor_name: str = "") -> str:
     """Return HTML chip token representing matched, failed, or lacking specification parameters."""
+    pdf_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; '
+        'margin-left: 5px; display: inline-block; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.45));">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '</svg>'
+    )
     if s.status == "match":
         if s.file and vendor_name:
             link_url = f'?page=audit&view_file={urllib.parse.quote(s.file)}&view_page={s.page}&vendor={urllib.parse.quote(vendor_name)}'
+            visual_url = f'?page=audit&view_visual_file={urllib.parse.quote(s.file)}&view_visual_page={s.page}&vendor={urllib.parse.quote(vendor_name)}'
+            pdf_icon = f'<a href="{visual_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
             clean_prov = re.sub(r'\s*\(Pg \d+\)', '', s.provided)
-            return f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip match" style="cursor: pointer; border: 1px solid rgba(123, 146, 255, 0.45); background: rgba(123, 146, 255, 0.1) !important; color: var(--blue) !important; font-weight: 700;">{html.escape(clean_prov)} <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">📄 Pg {s.page}</span></span></a>'
+            return f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip match" style="cursor: pointer; border: 1px solid rgba(233, 240, 86, 0.45); background: rgba(233, 240, 86, 0.1) !important; color: var(--blue) !important; font-weight: 700;">{html.escape(clean_prov)} <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">📄 Pg {s.page}</span></span></a>{pdf_icon}'
         return f'<span class="chip match">{html.escape(s.provided)}</span>'
     if s.status == "fail":
         if s.file and vendor_name:
             link_url = f'?page=audit&view_file={urllib.parse.quote(s.file)}&view_page={s.page}&vendor={urllib.parse.quote(vendor_name)}'
+            visual_url = f'?page=audit&view_visual_file={urllib.parse.quote(s.file)}&view_visual_page={s.page}&vendor={urllib.parse.quote(vendor_name)}'
+            pdf_icon = f'<a href="{visual_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
             clean_prov = re.sub(r'\s*\(Pg \d+\)', '', s.provided)
-            return f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip fail" style="cursor: pointer; border: 1px solid rgba(208, 122, 122, 0.45); background: rgba(208, 122, 122, 0.1) !important; color: var(--red) !important; font-weight: 700;">{html.escape(clean_prov)} ✕ <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">Pg {s.page}</span></span></a>'
+            return f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip fail" style="cursor: pointer; border: 1px solid rgba(208, 122, 122, 0.45); background: rgba(208, 122, 122, 0.1) !important; color: var(--red) !important; font-weight: 700;">{html.escape(clean_prov)} ✕ <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">Pg {s.page}</span></span></a>{pdf_icon}'
         return f'<span class="chip fail">{html.escape(s.provided)} ✕</span>'
     return '<span class="chip lack">[DATA LACKING]</span>'
 
@@ -708,7 +780,7 @@ def spec_chip(s: SpecResult, vendor_name: str = "") -> str:
 def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> str:
     """Renders a custom glassmorphic terminal UI for the audit engine loading state."""
     icon_check = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
-    icon_spin = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7B92FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>'
+    icon_spin = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E9F056" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>'
     icon_wait = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>'
     
     status_parsing = "active" if step == 0 else ("done" if step > 0 else "")
@@ -727,7 +799,7 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
     <style>
         @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
         @keyframes scanline {{ 0% {{ top: -10px; }} 100% {{ top: 110%; }} }}
-        @keyframes pulse-bar {{ 0% {{ opacity: 0.8; }} 50% {{ opacity: 1; box-shadow: 0 0 10px #7B92FF; }} 100% {{ opacity: 0.8; }} }}
+        @keyframes pulse-bar {{ 0% {{ opacity: 0.8; }} 50% {{ opacity: 1; box-shadow: 0 0 10px #E9F056; }} 100% {{ opacity: 0.8; }} }}
         
         .audit-terminal {{
             background: rgba(10, 15, 30, 0.9);
@@ -760,8 +832,8 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
             content: '';
             position: absolute;
             top: 0; left: 0; width: 100%; height: 2px;
-            background: linear-gradient(90deg, transparent, rgba(123, 146, 255, 0.8), transparent);
-            box-shadow: 0 0 15px rgba(123, 146, 255, 0.8);
+            background: linear-gradient(90deg, transparent, rgba(233, 240, 86, 0.8), transparent);
+            box-shadow: 0 0 15px rgba(233, 240, 86, 0.8);
             z-index: 1;
             animation: scanline 2.5s ease-in-out infinite;
         }}
@@ -773,10 +845,10 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
             z-index: 5;
             transition: all 0.3s ease;
         }}
-        .hud-bracket.tl {{ top: 12px; left: 12px; border-top-color: #7B92FF; border-left-color: #7B92FF; }}
-        .hud-bracket.tr {{ top: 12px; right: 12px; border-top-color: #7B92FF; border-right-color: #7B92FF; }}
-        .hud-bracket.bl {{ bottom: 12px; left: 12px; border-bottom-color: #7B92FF; border-left-color: #7B92FF; }}
-        .hud-bracket.br {{ bottom: 12px; right: 12px; border-bottom-color: #7B92FF; border-right-color: #7B92FF; }}
+        .hud-bracket.tl {{ top: 12px; left: 12px; border-top-color: #E9F056; border-left-color: #E9F056; }}
+        .hud-bracket.tr {{ top: 12px; right: 12px; border-top-color: #E9F056; border-right-color: #E9F056; }}
+        .hud-bracket.bl {{ bottom: 12px; left: 12px; border-bottom-color: #E9F056; border-left-color: #E9F056; }}
+        .hud-bracket.br {{ bottom: 12px; right: 12px; border-bottom-color: #E9F056; border-right-color: #E9F056; }}
         
         .audit-terminal-content {{ position: relative; z-index: 2; }}
 
@@ -790,13 +862,13 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
             transition: all 0.3s ease;
         }}
         .audit-step.active {{
-            color: #7B92FF;
+            color: #E9F056;
             font-weight: 700;
-            background: rgba(123, 146, 255, 0.05);
+            background: rgba(233, 240, 86, 0.05);
             padding: 8px 12px;
             border-radius: 4px;
             margin-left: -12px;
-            border-left: 2px solid #7B92FF;
+            border-left: 2px solid #E9F056;
         }}
         .audit-step.done {{
             color: #10B981;
@@ -812,7 +884,7 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
         }}
         .audit-progress-bar {{
             height: 100%;
-            background: #7B92FF;
+            background: #E9F056;
             width: {progress_pct}%;
             transition: width 0.4s ease;
             animation: pulse-bar 2s infinite;
@@ -826,10 +898,10 @@ def render_audit_terminal(step: int, vendor_text: str, progress_pct: float) -> s
         <div class="audit-terminal-content">
             <div style="font-weight: 800; font-size: 15px; color: #E2E8F0; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 1px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7B92FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E9F056" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                     ARGUS BID AI AUDIT ENGINE
                 </div>
-                <div style="font-size: 10px; font-weight: 700; color: #7B92FF; background: rgba(123, 146, 255, 0.1); padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;">SYS.OP.RUNNING</div>
+                <div style="font-size: 10px; font-weight: 700; color: #E9F056; background: rgba(233, 240, 86, 0.1); padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;">SYS.OP.RUNNING</div>
             </div>
             <div class="audit-step {status_parsing}">
                 {icon_parsing} <span>Parsing Master BID Framework...</span>

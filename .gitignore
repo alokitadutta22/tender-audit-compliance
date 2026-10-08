@@ -1,8 +1,33 @@
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Caches and logs
+*.pkl
+*.jsonl
+*.log
+error_log.txt
+audit_engine.log
 .sentinel_cache.json
 .sentinel_cache.pkl
-error_log.txt
-test_js.py
+
+# Environment variables and API keys
 .env
+.env.*
+*.env
 .streamlit/secrets.toml
+secrets.toml
+credentials.json
+
+# OS and IDE files
+desktop.ini
+Thumbs.db
+.DS_Store
+*.code-workspace
+.vscode/
+.idea/
+
+# Scratch and test files
+test_js.py
+

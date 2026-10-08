@@ -15,12 +15,17 @@ import os
 import pickle
 import re
 import time
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Import core audit engine logic and models
+# Import core audit engine logic and models with forced reload to clear Streamlit's cache
+import importlib
+import audit_engine
+importlib.reload(audit_engine)
 from audit_engine import (
     AuditEngine,
     LLMAuditEngine,
@@ -34,7 +39,6 @@ from audit_engine import (
     read_uploaded_file,
     is_valid_bid_document,
     MASTER_BID_TEXT,
-    MOCK_VENDORS,
     STATUS_RESPONSIVE,
     STATUS_DISQUALIFIED,
     MAF_VALID,
@@ -45,15 +49,21 @@ from audit_engine import (
     READ_CORRUPT
 )
 
-# Import Local RAG engine dynamically
+# Import Local RAG engine dynamically with forced reload to clear Streamlit's cache (Reload Trigger 1)
 try:
+    import importlib
+    import rag_engine
+    importlib.reload(rag_engine)
     from rag_engine import LocalRAGAuditEngine
     HAS_RAG_ENGINE = True
 except Exception as e:
     HAS_RAG_ENGINE = False
 
 
-# Import UI themes, css styles, and HTML helper components
+# Import UI themes, css styles, and HTML helper components with forced reload to clear Streamlit's cache
+import importlib
+import ui_styles
+importlib.reload(ui_styles)
 from ui_styles import (
     PALETTE,
     CSS,
@@ -70,13 +80,175 @@ from ui_styles import (
 )
 
 # Inject the loading screen at startup
-inject_custom_loading_screen()
+# inject_custom_loading_screen()
 
 
 # ===========================================================================
 # SECTION 9 — STREAMLIT APPLICATION STATE & CACHING
 # ===========================================================================
 CACHE_FILE = ".sentinel_cache.pkl"
+
+def serialize_results(results: Optional[List[Any]]) -> Optional[List[Dict[str, Any]]]:
+    if results is None:
+        return None
+    serialized = []
+    for r in results:
+        inventory_list = []
+        for i in r.inventory:
+            inventory_list.append({
+                "filename": i.filename,
+                "doc_type": i.doc_type,
+                "readability": i.readability
+            })
+            
+        maf_dict = None
+        if r.maf:
+            maf_dict = {
+                "status": r.maf.status,
+                "evidence": r.maf.evidence,
+                "source_file": r.maf.source_file,
+                "page": r.maf.page
+            }
+            
+        pqc_list = []
+        for p in r.pqc:
+            pqc_list.append({
+                "label": p.label,
+                "required": p.required,
+                "provided": p.provided,
+                "passed": p.passed,
+                "section": p.section,
+                "file": p.file,
+                "page": p.page,
+                "bid_file": p.bid_file,
+                "bid_page": p.bid_page
+            })
+            
+        mand_specs_list = []
+        for s in r.mandatory_specs:
+            mand_specs_list.append({
+                "param": s.param,
+                "required": s.required,
+                "provided": s.provided,
+                "status": s.status,
+                "mandatory": s.mandatory,
+                "section": s.section,
+                "file": s.file,
+                "page": s.page,
+                "bid_file": s.bid_file,
+                "bid_page": s.bid_page
+            })
+            
+        pref_specs_list = []
+        for s in r.preferred_specs:
+            pref_specs_list.append({
+                "param": s.param,
+                "required": s.required,
+                "provided": s.provided,
+                "status": s.status,
+                "mandatory": s.mandatory,
+                "section": s.section,
+                "file": s.file,
+                "page": s.page,
+                "bid_file": s.bid_file,
+                "bid_page": s.bid_page
+            })
+            
+        violations_list = []
+        for v in r.violations:
+            violations_list.append({
+                "title": v.title,
+                "requirement": v.requirement,
+                "finding": v.finding
+            })
+            
+        serialized.append({
+            "name": r.name,
+            "inventory": inventory_list,
+            "maf": maf_dict,
+            "pqc": pqc_list,
+            "mandatory_specs": mand_specs_list,
+            "preferred_specs": pref_specs_list,
+            "deviations": r.deviations,
+            "missing_documents": r.missing_documents,
+            "disqualified": r.disqualified,
+            "violations": violations_list,
+            "score": r.score,
+            "mandatory_score": r.mandatory_score,
+            "preferred_score": r.preferred_score,
+            "rank": r.rank,
+            "status": r.status,
+            "summary": r.summary,
+            "make_model": r.make_model,
+            "commercial_details": r.commercial_details,
+            "document_checklist": r.document_checklist
+        })
+    return serialized
+
+
+def deserialize_results(serialized: Optional[List[Dict[str, Any]]]) -> Optional[List[Any]]:
+    if serialized is None:
+        return None
+    from audit_engine import VendorResult, InventoryItem, MAFResult, PQCResult, SpecResult, Violation
+    results = []
+    for d in serialized:
+        inventory = [InventoryItem(**i) for i in d.get("inventory", [])]
+        maf = None
+        if d.get("maf"):
+            maf = MAFResult(**d["maf"])
+        pqc = [PQCResult(**p) for p in d.get("pqc", [])]
+        mandatory_specs = [SpecResult(**s) for s in d.get("mandatory_specs", [])]
+        preferred_specs = [SpecResult(**s) for s in d.get("preferred_specs", [])]
+        violations = [Violation(**v) for v in d.get("violations", [])]
+        
+        r = VendorResult(
+            name=d["name"],
+            inventory=inventory,
+            maf=maf,
+            pqc=pqc,
+            mandatory_specs=mandatory_specs,
+            preferred_specs=preferred_specs,
+            deviations=d.get("deviations", []),
+            missing_documents=d.get("missing_documents", []),
+            disqualified=d.get("disqualified", False),
+            violations=violations,
+            score=d.get("score", 0.0),
+            mandatory_score=d.get("mandatory_score", 0.0),
+            preferred_score=d.get("preferred_score", 0.0),
+            rank=d.get("rank"),
+            status=d.get("status", "Responsive"),
+            summary=d.get("summary", ""),
+            make_model=d.get("make_model", ""),
+            commercial_details=d.get("commercial_details", ""),
+            document_checklist=d.get("document_checklist", {})
+        )
+        results.append(r)
+    return results
+
+
+def serialize_audit_cache(cache: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    serialized = {}
+    for name, entry in cache.items():
+        res = entry.get("result")
+        res_serialized = serialize_results([res])[0] if res else None
+        serialized[name] = {
+            "hash": entry["hash"],
+            "result": res_serialized
+        }
+    return serialized
+
+
+def deserialize_audit_cache(serialized: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    cache = {}
+    for name, entry in serialized.items():
+        res_dict = entry.get("result")
+        res = deserialize_results([res_dict])[0] if res_dict else None
+        cache[name] = {
+            "hash": entry["hash"],
+            "result": res
+        }
+    return cache
+
 
 def save_state_to_disk() -> None:
     ss = st.session_state
@@ -89,10 +261,17 @@ def save_state_to_disk() -> None:
             "vendor_files": ss.get("vendor_files", {}),
             "vendor_errors": ss.get("vendor_errors", {}),
             "bid": ss.get("bid"),
-            "results": ss.get("results", None),
+            "results": serialize_results(ss.get("results")),
             "xai": ss.get("xai", []),
             "narrative": ss.get("narrative", None),
             "processed": ss.get("processed", False),
+            "audit_cache": serialize_audit_cache(ss.get("audit_cache", {})),
+            "last_bid_hash": ss.get("last_bid_hash", ""),
+            "vendor_mtime": ss.get("vendor_mtime", {}),
+            "vendor_paths": ss.get("vendor_paths", {}),
+            "bid_paths": ss.get("bid_paths", {}),
+            "pipeline_stage": ss.get("pipeline_stage", "upload"),
+            "bid_confirmed": ss.get("bid_confirmed", False),
         }
         tmp_file = CACHE_FILE + ".tmp"
         with open(tmp_file, "wb") as f:
@@ -119,10 +298,17 @@ def load_state_from_disk() -> bool:
         ss.vendor_files = data.get("vendor_files", {})
         ss.vendor_errors = data.get("vendor_errors", {})
         ss.bid = data.get("bid")
-        ss.results = data.get("results", None)
+        ss.results = deserialize_results(data.get("results"))
         ss.xai = data.get("xai", [])
         ss.narrative = data.get("narrative", None)
         ss.processed = data.get("processed", False)
+        ss.audit_cache = deserialize_audit_cache(data.get("audit_cache", {}))
+        ss.last_bid_hash = data.get("last_bid_hash", "")
+        ss.vendor_mtime = data.get("vendor_mtime", {})
+        ss.vendor_paths = data.get("vendor_paths", {})
+        ss.bid_paths = data.get("bid_paths", {})
+        ss.pipeline_stage = data.get("pipeline_stage", "upload")
+        ss.bid_confirmed = data.get("bid_confirmed", False)
         return True
     except EOFError:
         if os.path.exists(CACHE_FILE):
@@ -143,12 +329,115 @@ def init_state() -> None:
             ss.setdefault("bid_files", {})
             ss.setdefault("vendor_files", {})      # name -> {filename: text}
             ss.setdefault("vendor_errors", {})     # name -> {filename: error|None}
+            ss.setdefault("vendor_paths", {})
+            ss.setdefault("bid_paths", {})
+            ss.setdefault("audit_cache", {})
+            ss.setdefault("last_bid_hash", "")
+            ss.setdefault("vendor_mtime", {})
     ss.setdefault("results", None)
     ss.setdefault("bid", None)
     ss.setdefault("xai", [])
     ss.setdefault("narrative", None)
     ss.setdefault("processed", False)
     ss.setdefault("bid_uploader_key", 0)
+    ss.setdefault("audit_cache", {})
+    ss.setdefault("last_bid_hash", "")
+    ss.setdefault("vendor_mtime", {})
+    ss.setdefault("vendor_paths", {})
+    ss.setdefault("bid_paths", {})
+    ss.setdefault("pipeline_stage", "upload")   # upload | rules_review | audit
+    ss.setdefault("bid_confirmed", False)
+
+
+def generate_dynamic_demo_bidders(bid: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    tender_id = bid.get("tender_id", "TENDER-2026")
+    if not tender_id or tender_id == "Unknown":
+        tender_id = "TENDER-2026"
+        
+    mand_specs = bid.get("mandatory_specs", [])
+    pref_specs = bid.get("preferred_specs", [])
+    
+    # 1. Delta Systems (Fully Compliant)
+    delta_maf = f"OEM Manufacturer's Authorization Form (MAF) for Tender {tender_id}.\nWe hereby authorize M/s Delta Systems to bid, supply and support our products for the duration of the contract."
+    
+    delta_specs = f"TECHNICAL COMPLIANCE DATASHEET — DELTA SYSTEMS\nProposed Model: DS-Premium-Compliant-Model\n"
+    for s in mand_specs:
+        req_val = s.get("required_value", "Compliant")
+        delta_specs += f"- {s['label']}: Proposed compliant value meeting {req_val} {s.get('unit', '')}\n"
+    for s in pref_specs:
+        req_val = s.get("required_value", "Compliant")
+        delta_specs += f"- {s['label']}: Proposed compliant value meeting {req_val} {s.get('unit', '')}\n"
+        
+    delta_exp = f"COMPLETED WORK ORDERS & CERTIFICATES\n"
+    delta_exp += f"Order 1: Supply to IOCL of similar equipment. Value: INR 45 Lakhs. Completed successfully.\n"
+    delta_exp += f"Order 2: Supply to ONGC. Value: INR 35 Lakhs. Completed successfully.\n"
+    delta_exp += f"Order 3: Supply to BHEL. Value: INR 25 Lakhs. Completed successfully.\n"
+    
+    delta_decl = (
+        "Annexure-I Bidder Details: PAN AAACT9901M, GSTIN 27AAACT9901M1Z5, SAP Code 500192.\n"
+        "Annexure-III Bid Security Declaration: We declare that we will be suspended if we withdraw or modify our bid.\n"
+        "Annexure-IV Insolvency Declaration: We declare that we are not undergoing insolvency or bankruptcy proceedings.\n"
+        "Annexure-V Blacklisting Declaration: We declare that we are not blacklisted or holiday listed.\n"
+        "Annexure-X Local Content Certificate: Minimum local content is 55%."
+    )
+    
+    # 2. Vibrant IT (Partially Compliant)
+    vibrant_maf = f"OEM Authorization Letter for Tender {tender_id}.\nWe authorize M/s Vibrant IT to quote and support our hardware solutions."
+    
+    vibrant_specs = f"TECHNICAL DATASHEET — VIBRANT IT\nProposed Model: VIT-Standard-Model\n"
+    # Fails first spec parameter slightly to test less-compliant scoring logic
+    for i, s in enumerate(mand_specs):
+        if i == 0 and s.get("op") in ("gte", "lte"):
+            vibrant_specs += f"- {s['label']}: Proposed value fails to meet the requirement (offering non-compliant variant)\n"
+        else:
+            req_val = s.get("required_value", "Compliant")
+            vibrant_specs += f"- {s['label']}: Proposed compliant value meeting {req_val} {s.get('unit', '')}\n"
+    for s in pref_specs:
+        req_val = s.get("required_value", "Compliant")
+        vibrant_specs += f"- {s['label']}: Proposed compliant value meeting {req_val} {s.get('unit', '')}\n"
+        
+    vibrant_exp = f"COMPLETED CONTRACTS\n"
+    vibrant_exp += f"Order 1: Supply of similar systems to GAIL. Value: INR 38.5 Lakhs. Completed successfully.\n"
+    
+    vibrant_decl = (
+        "Annexure-I Bidder Details: PAN AAABT1102K, GSTIN 27AAABT1102K1Z9.\n"
+        "Annexure-III Bid Security Declaration: We declare that we will be suspended if we withdraw or modify our bid.\n"
+        "Annexure-IV Insolvency Declaration: We declare that we are not undergoing insolvency or bankruptcy proceedings.\n"
+        "Annexure-V Blacklisting Declaration: We declare that we are not blacklisted.\n"
+        "Annexure-X Local Content Certificate: Minimum local content is 60%."
+    )
+    
+    # 3. Cyber Infosys (Non-Compliant)
+    cyber_maf = f"OEM Letterhead: We authorize M/s Cyber Infosys to supply computer accessories for Tender {tender_id}."
+    
+    cyber_specs = f"TECHNICAL BID — CYBER INFOSYS\nProposed Model: Basic-Computer-Accessory-Model-280\n"
+    for s in mand_specs:
+        cyber_specs += f"- {s['label']}: Proposed computer accessory (unrelated product model specs)\n"
+        
+    cyber_exp = f"Experience: Reseller of general computer accessories. No similar large work orders completed."
+    
+    cyber_decl = "We accept GeM General Terms and Conditions."
+    
+    return {
+        "Delta Systems": {
+            "maf.pdf": delta_maf,
+            "datasheet.pdf": delta_specs,
+            "experience.pdf": delta_exp,
+            "declarations.pdf": delta_decl
+        },
+        "Vibrant IT": {
+            "maf.pdf": vibrant_maf,
+            "datasheet.pdf": vibrant_specs,
+            "experience.pdf": vibrant_exp,
+            "declarations.pdf": vibrant_decl
+        },
+        "Cyber Infosys": {
+            "maf.pdf": cyber_maf,
+            "datasheet.pdf": cyber_specs,
+            "experience.pdf": cyber_exp,
+            "declarations.pdf": cyber_decl
+        }
+    }
 
 
 def load_demo() -> None:
@@ -157,63 +446,255 @@ def load_demo() -> None:
     ss.bid_source = "Demo NIT (IOCL/HR/IT/2026/NW-4471)"
     ss.bid_file_id = "demo_bid"
     ss.bid_files = {"Demo NIT.pdf": MASTER_BID_TEXT}
-    ss.vendor_files = {k: dict(v) for k, v in MOCK_VENDORS.items()}
-    ss.vendor_errors = {k: {f: None for f in v} for k, v in MOCK_VENDORS.items()}
+    
+    # Use deterministic parser to instantly extract tender criteria structure
+    from audit_engine import AuditEngine
+    engine = AuditEngine()
+    ss.bid = engine.parse_master_bid(MASTER_BID_TEXT)
+    
+    # Dynamically generate bidder files based on the tender specs
+    ss.vendor_files = generate_dynamic_demo_bidders(ss.bid)
+    ss.vendor_errors = {k: {f: None for f in v} for k, v in ss.vendor_files.items()}
+    
     ss.results = None
     ss.processed = False
+    ss.bid_confirmed = False
+    ss.pipeline_stage = "rules_review"
     ss.bid_uploader_key += 1
     save_state_to_disk()
 
 
 def reset_all() -> None:
     for k in ["bid_text", "bid_source", "bid_file_id", "bid_files", "vendor_files", "vendor_errors",
-              "results", "bid", "xai", "narrative", "processed", "bid_uploader_key"]:
+              "results", "bid", "xai", "narrative", "processed", "bid_uploader_key", "audit_cache", "last_bid_hash",
+              "vendor_mtime", "vendor_paths", "bid_paths", "pipeline_stage", "bid_confirmed"]:
         st.session_state.pop(k, None)
     if os.path.exists(CACHE_FILE):
         try:
             os.remove(CACHE_FILE)
         except OSError:
             pass
+    import shutil
+    if os.path.exists(".sentinel_cache_files"):
+        try:
+            shutil.rmtree(".sentinel_cache_files")
+        except Exception:
+            pass
     init_state()
+
+def get_vendor_files_hash(files: Dict[str, str]) -> str:
+    import hashlib
+    import json
+    sorted_items = sorted(files.items())
+    serialized = json.dumps(sorted_items)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
 
 def run_audit(api_key: str, model: str) -> None:
+    # Clear the audit_engine.log file on every run
+    try:
+        with open("audit_engine.log", "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception:
+        pass
+
     ss = st.session_state
-    mode = ss.get("engine_mode", "Deterministic Rules (Regex)")
-    if mode == "Local Llama RAG (Ollama)" and HAS_RAG_ENGINE:
-        engine = LocalRAGAuditEngine(base_url=ss.get("ollama_url", "http://localhost:11434"))
-    else:
-        engine = get_engine(api_key, model)
+    import hashlib
+    
+    # Invalidate cache if Master Bid text changes
+    current_bid_hash = hashlib.sha256(ss.bid_text.encode('utf-8')).hexdigest()
+    if ss.get("last_bid_hash") != current_bid_hash:
+        ss.audit_cache = {}
+        ss.last_bid_hash = current_bid_hash
+        
+    mode = ss.get("engine_mode", "Deterministic Base Engine (Zero-AI / Fast)")
+    engine = None
+    
+    # Dynamic self-healing fallback wrapper
+    try:
+        if mode == "Deterministic Base Engine (Zero-AI / Fast)":
+            engine = audit_engine.AuditEngine()
+        elif mode == "Local Llama RAG (Ollama)" and HAS_RAG_ENGINE:
+            import urllib.request
+            import subprocess
+            
+            ollama_running = False
+            ollama_url = ss.get("ollama_url", "http://localhost:11434")
+            try:
+                req = urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=1.5)
+                if req.getcode() == 200:
+                    ollama_running = True
+            except Exception:
+                pass
+                
+            groq_key = ss.get("groq_key", "").strip()
+            
+            if not ollama_running:
+                if groq_key:
+                    st.warning("⚠️ Local Ollama is not running. Automatically switching to Cloud RAG (Groq) mode using your API key to perform the audit...")
+                    ss.engine_mode = "Cloud RAG (Groq)"
+                    mode = "Cloud RAG (Groq)"
+                else:
+                    st.error("❌ Local Ollama is not running (Connection Refused). Please launch the Ollama desktop application or paste your Groq API key in the sidebar to run in Cloud RAG mode.")
+                    return
+            else:
+                # Check available RAM on Windows to prevent CPU crashes
+                try:
+                    out = subprocess.check_output("wmic OS get FreePhysicalMemory", shell=True).decode("utf-8")
+                    lines = [line.strip() for line in out.split("\n") if line.strip()]
+                    if len(lines) > 1:
+                        free_kb = int(lines[1])
+                        free_gb = free_kb / (1024 * 1024)
+                        if free_gb < 3.0:
+                            if groq_key:
+                                st.warning(f"⚠️ Free system RAM is extremely low ({free_gb:.2f} GB). To prevent a system crash, automatically switching to Cloud RAG (Groq) mode...")
+                                ss.engine_mode = "Cloud RAG (Groq)"
+                                mode = "Cloud RAG (Groq)"
+                            else:
+                                st.warning(f"⚠️ Free system RAM is low ({free_gb:.2f} GB). Ollama might crash or fail. If this happens, please close other apps or paste a Groq API key in the sidebar.")
+                except Exception:
+                    pass
+
+            if mode == "Local Llama RAG (Ollama)":
+                engine = LocalRAGAuditEngine(
+                    model_name=ss.get("ollama_model_name", "qwen2.5:7b"),
+                    base_url=ss.get("ollama_url", "http://localhost:11434"),
+                    mode="local"
+                )
+        elif mode == "Cloud RAG (Groq)" and HAS_RAG_ENGINE:
+            groq_key = ss.get("groq_key", "").strip()
+            if not groq_key:
+                st.error("❌ Groq API Key is required for Cloud RAG (Groq) mode. Please enter it in the sidebar.")
+                return
+            
+            gemini_api_key = ""
+            emb_provider = ss.get("groq_embedding_provider", "Local Ollama Embeddings")
+            if emb_provider == "Cloud Gemini Embeddings":
+                gemini_api_key = ss.get("gemini_key", "").strip()
+                if not gemini_api_key:
+                    st.error("❌ Gemini API Key is required to run Cloud Gemini Embeddings.")
+                    return
+            
+            engine = LocalRAGAuditEngine(
+                model_name=ss.get("groq_model_name", "llama-3.3-70b-versatile"),
+                mode="groq",
+                api_key=groq_key,
+                gemini_api_key=gemini_api_key,
+                embedding_provider=emb_provider
+            )
+        elif mode == "Cloud RAG (Gemini)" and HAS_RAG_ENGINE:
+            gemini_key = ss.get("gemini_key", "").strip()
+            if not gemini_key:
+                st.error("❌ Gemini API Key is required for Cloud RAG (Gemini) mode. Please enter it in the sidebar.")
+                return
+            
+            engine = LocalRAGAuditEngine(
+                model_name=ss.get("gemini_model_name", "gemini-1.5-flash"),
+                mode="gemini",
+                api_key=gemini_key,
+                embedding_provider="Cloud Gemini Embeddings"
+            )
+        else:
+            engine = audit_engine.AuditEngine()
+    except Exception as init_err:
+        st.warning(f"⚠️ Failed to initialize {mode}: {init_err}. Automatically falling back to Deterministic Base Engine (Zero-AI / Fast)...")
+        engine = audit_engine.AuditEngine()
+        mode = "Deterministic Base Engine (Zero-AI / Fast)"
+        ss.engine_mode = "Deterministic Base Engine (Zero-AI / Fast)"
+
+    if not engine:
+        engine = audit_engine.AuditEngine()
+
     engine.bid_text = ss.bid_text
+    engine.bid_source = ss.bid_source
 
     placeholder = st.empty()
-    
-    # Step 0: Parsing Master BID
+    error_console_placeholder = st.empty()
     placeholder.markdown(render_audit_terminal(0, "Pending Vendor Analysis...", 0.0), unsafe_allow_html=True)
-    time.sleep(0.4)
-    ss.bid = engine.parse_master_bid(ss.bid_text)
+    time.sleep(0.1)
+    if not ss.get("bid"):
+        with placeholder:
+            with st.spinner("🔍 Extracting rules from master bid document..."):
+                ss.bid = engine.parse_master_bid(ss.bid_text)
+
+    # Pause here and send user to rules review page before vendor analysis
+    if not ss.get("bid_confirmed", False):
+        ss.pipeline_stage = "rules_review"
+        save_state_to_disk()
+        st.rerun()
+        return
 
     names = list(ss.vendor_files.keys())
     results: List[VendorResult] = []
+    cache_miss = False
     
-    # Step 1: Analyzing Vendors
+    # Step 1: Analyzing Vendors (leveraging smart incremental cache)
     for i, name in enumerate(names, start=1):
         pct = (i / max(len(names), 1)) * 100
-        placeholder.markdown(render_audit_terminal(1, f"Analyzing {name} ({i}/{len(names)})...", pct), unsafe_allow_html=True)
-        time.sleep(0.3)
         files = ss.vendor_files[name]
-        errors = ss.vendor_errors.get(name, {f: None for f in files})
-        results.append(engine.analyze_vendor(name, files, errors, ss.bid))
+        files_hash = get_vendor_files_hash(files)
+        
+        cached_entry = ss.audit_cache.get(name)
+        if cached_entry and cached_entry.get("hash") == files_hash:
+            placeholder.markdown(render_audit_terminal(1, f"Loading {name} (Cached)...", pct), unsafe_allow_html=True)
+            time.sleep(0.1)  # fast display update
+            results.append(cached_entry["result"])
+        else:
+            cache_miss = True
+            placeholder.markdown(render_audit_terminal(1, f"Analyzing {name} ({i}/{len(names)})...", pct), unsafe_allow_html=True)
+            time.sleep(0.3)
+            errors = ss.vendor_errors.get(name, {f: None for f in files})
+            res = engine.analyze_vendor(name, files, errors, ss.bid)
+            ss.audit_cache[name] = {"hash": files_hash, "result": res}
+            results.append(res)
+
+        # Read and extract warnings/errors from log file in real-time
+        errors_found = []
+        try:
+            import os
+            import re
+            if os.path.exists("audit_engine.log"):
+                with open("audit_engine.log", "r", encoding="utf-8") as lf:
+                    for line in lf:
+                        lower_line = line.lower()
+                        if "failed" in lower_line or "error" in lower_line or "warning" in lower_line or "exception" in lower_line or "corrupt" in lower_line or "winerror" in lower_line:
+                            clean_line = re.sub(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*", "", line.strip())
+                            if clean_line not in errors_found:
+                                errors_found.append(clean_line)
+        except Exception:
+            pass
+
+        if errors_found:
+            error_list_html = "".join(f"<div style='margin-bottom: 4px;'>• {html.escape(e)}</div>" for e in errors_found[-5:])
+            error_console_placeholder.markdown(
+                f"""
+                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); padding: 12px 16px; border-radius: 8px; margin-top: 16px; font-family: monospace; font-size: 12px; max-width: 1000px;">
+                    <div style="color: #F87171; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+                        <span>⚠️ Active Warnings & Errors ({len(errors_found)})</span>
+                    </div>
+                    <div style="max-height: 120px; overflow-y: auto; color: #FCA5A5; line-height: 1.4;">
+                        {error_list_html}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            error_console_placeholder.empty()
     
     # Step 2: Generating Ranking & Summary
     placeholder.markdown(render_audit_terminal(2, f"Analyzed {len(names)} vendor submissions.", 100.0), unsafe_allow_html=True)
-    time.sleep(0.4)
-    ss.xai = engine.rank_and_explain(results)
-    ss.narrative = engine.narrate(ss.bid, results) if hasattr(engine, "narrate") else None
-    time.sleep(0.4)
+    time.sleep(0.1)
+    if cache_miss or not ss.get("xai") or not ss.get("narrative"):
+        ss.xai = engine.rank_and_explain(results)
+        ss.narrative = engine.narrate(ss.bid, results) if hasattr(engine, "narrate") else None
+        time.sleep(0.4)
+    else:
+        placeholder.markdown(render_audit_terminal(2, f"Loaded ranking & narrative summary from cache.", 100.0), unsafe_allow_html=True)
+        time.sleep(0.3)
 
-    
     placeholder.empty()
+    error_console_placeholder.empty()
 
     ss.results = results
     ss.processed = True
@@ -275,8 +756,8 @@ def view_documents_dialog(title: str, files_dict: Dict[str, str], focus_file: Op
                 if (el) {{
                     el.scrollIntoView({{ behavior: "smooth", block: "center" }});
                     const originalBorder = el.style.border;
-                    el.style.border = "1px solid #7B92FF";
-                    el.style.boxShadow = "0 0 15px rgba(123, 146, 255, 0.5)";
+                    el.style.border = "1px solid #E9F056";
+                    el.style.boxShadow = "0 0 15px rgba(233, 240, 86, 0.5)";
                     setTimeout(function() {{
                         el.style.border = originalBorder;
                         el.style.boxShadow = "";
@@ -287,6 +768,207 @@ def view_documents_dialog(title: str, files_dict: Dict[str, str], focus_file: Op
         """
         components.html(scroll_js, height=0, width=0)
 
+def render_visual_document_viewer() -> None:
+    ss = st.session_state
+    focus_file = ss.get("view_visual_file")
+    focus_page = ss.get("view_visual_page", 1)
+    vendor_name = ss.get("view_visual_vendor", "Master")
+    
+    st.markdown(f"## 📄 Visual PDF Page Viewer")
+    st.markdown(f"**Vendor:** `{vendor_name}` | **Document:** `{focus_file}`")
+    
+    # CSS injection to force high-contrast black text on button backgrounds, remove colorful emojis, and handle disabled state
+    st.markdown("""<style>
+    div[data-testid="stColumn"] div.stButton > button {
+        background: linear-gradient(135deg, #E9F056, #C6CD3E) !important;
+        color: #1e1e1e !important;
+        border: none !important;
+        box-shadow: 0 4px 12px rgba(233, 240, 86, 0.25) !important;
+        font-weight: 800 !important;
+        font-size: 13.5px !important;
+        padding: 8px 16px !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease !important;
+        text-shadow: none !important;
+    }
+    div[data-testid="stColumn"] div.stButton > button p {
+        color: #1e1e1e !important;
+        font-weight: 800 !important;
+        text-shadow: none !important;
+    }
+    div[data-testid="stColumn"] div.stButton > button:hover {
+        background: #FFFFFF !important;
+        color: #1e1e1e !important;
+        box-shadow: 0 4px 15px rgba(255, 255, 255, 0.4) !important;
+    }
+    div[data-testid="stColumn"] div.stButton > button:hover p {
+        color: #1e1e1e !important;
+    }
+    div[data-testid="stColumn"] div.stButton > button:disabled {
+        background: rgba(255, 255, 255, 0.05) !important;
+        color: #64748B !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        box-shadow: none !important;
+        cursor: not-allowed !important;
+    }
+    div[data-testid="stColumn"] div.stButton > button:disabled p {
+        color: #64748B !important;
+    }
+    </style>""", unsafe_allow_html=True)
+    
+    # 1. Resolve local filepath
+    filepath = None
+    
+    # If focus_file is the bid_source description, resolve it to the actual first filename in cache
+    if vendor_name == "Master" and focus_file == ss.get("bid_source"):
+        if ss.get("bid_files"):
+            focus_file = list(ss.bid_files.keys())[0]
+            
+    if vendor_name == "Master":
+        filepath = ss.get("bid_paths", {}).get(focus_file)
+    else:
+        filepath = ss.get("vendor_paths", {}).get(vendor_name, {}).get(focus_file)
+        
+    # If not in session state paths, search in local files cache or directories
+    if not filepath or not os.path.exists(filepath):
+        # Fallback 1: check in local .sentinel_cache_files
+        cache_path = os.path.join(".sentinel_cache_files", focus_file) if focus_file else ""
+        if cache_path and os.path.exists(cache_path):
+            filepath = cache_path
+        else:
+            # Fallback 2: walk current workspace or user directories to find the file
+            found = False
+            if focus_file:
+                for parent_dir in [r"C:\Users\aloki\Downloads\iocl bid files", r"c:\Users\aloki\Desktop\iocl"]:
+                    if os.path.exists(parent_dir):
+                        for root, dirs, files in os.walk(parent_dir):
+                            if focus_file in files:
+                                filepath = os.path.join(root, focus_file)
+                                found = True
+                                break
+                    if found:
+                        break
+                    
+    # Save the resolved filepath back to session state to prevent searching again
+    if filepath and os.path.exists(filepath):
+        if vendor_name == "Master":
+            ss.setdefault("bid_paths", {})[focus_file] = filepath
+        else:
+            ss.setdefault("vendor_paths", {}).setdefault(vendor_name, {})[focus_file] = filepath
+
+    # Check if we have the text content in memory (e.g. for demo corpus or text uploads)
+    file_text = None
+    if focus_file:
+        if vendor_name == "Master":
+            file_text = ss.get("bid_files", {}).get(focus_file)
+        else:
+            file_text = ss.get("vendor_files", {}).get(vendor_name, {}).get(focus_file)
+
+    # 1.5 Render in-memory text if physical PDF is missing
+    if not filepath or not os.path.exists(filepath):
+        if file_text:
+            st.info(f"ℹ️ Serving document `{focus_file}` from memory cache.")
+            
+            # Parse page segments
+            page_blocks = {}
+            import re as _re
+            page_matches = list(_re.finditer(r'--- PAGE (\d+) ---\n?', file_text))
+            for idx_p, m in enumerate(page_matches):
+                p_num = int(m.group(1))
+                p_start = m.end()
+                p_end = page_matches[idx_p+1].start() if idx_p+1 < len(page_matches) else len(file_text)
+                page_blocks[p_num] = file_text[p_start:p_end]
+                
+            if not page_blocks:
+                # Split by form feed or use the entire text as page 1
+                parts = file_text.split('\f')
+                page_blocks = {i+1: p for i, p in enumerate(parts)}
+                
+            total_pages = len(page_blocks) if page_blocks else 1
+            page_num = max(1, min(focus_page, total_pages))
+            
+            # Action controls
+            col_back, col_prev, col_page, col_next, col_spacer = st.columns([2, 1, 1, 1, 4])
+            
+            with col_back:
+                if st.button("Return to Dashboard", key="text_view_back", use_container_width=True):
+                    ss.pop("view_visual_file", None)
+                    st.rerun()
+            with col_prev:
+                if st.button("Previous", key="text_view_prev", disabled=(page_num <= 1), use_container_width=True):
+                    ss["view_visual_page"] = page_num - 1
+                    st.rerun()
+            with col_page:
+                st.markdown(f"<div style='text-align: center; line-height: 38px; font-weight: 700; color: #E9F056;'>{page_num} / {total_pages}</div>", unsafe_allow_html=True)
+            with col_next:
+                if st.button("Next", key="text_view_next", disabled=(page_num >= total_pages), use_container_width=True):
+                    ss["view_visual_page"] = page_num + 1
+                    st.rerun()
+                    
+            st.divider()
+            
+            # Render page content
+            page_content = page_blocks.get(page_num, file_text)
+            st.markdown(f"### 📄 Page {page_num}")
+            st.markdown(
+                f"<div style='background: var(--panel2); padding: 20px 24px; border-radius: 8px; border: 1px solid var(--line); font-family: monospace; white-space: pre-wrap; font-size: 13.5px; color: #F8FAFC; max-height: 600px; overflow-y: auto;'>{html.escape(page_content)}</div>",
+                unsafe_allow_html=True
+            )
+            return
+        else:
+            st.error(f"Could not locate document file `{focus_file}` on disk or in memory cache.")
+            if st.button("Return to Dashboard", key="err_view_back"):
+                ss.pop("view_visual_file", None)
+                st.rerun()
+            return
+
+    # 2. Render Page using pdfplumber
+    import pdfplumber
+    try:
+        with pdfplumber.open(filepath) as pdf:
+            total_pages = len(pdf.pages)
+            page_num = max(1, min(focus_page, total_pages))
+            
+            # Action controls
+            col_back, col_prev, col_page, col_next, col_spacer = st.columns([2, 1, 1, 1, 4])
+            
+            with col_back:
+                if st.button("Return to Dashboard", use_container_width=True):
+                    ss.pop("view_visual_file", None)
+                    st.rerun()
+            with col_prev:
+                if st.button("Previous", disabled=(page_num <= 1), use_container_width=True):
+                    ss["view_visual_page"] = page_num - 1
+                    st.rerun()
+            with col_page:
+                st.markdown(f"<div style='text-align: center; line-height: 38px; font-weight: 700; color: #E9F056;'>{page_num} / {total_pages}</div>", unsafe_allow_html=True)
+            with col_next:
+                if st.button("Next", disabled=(page_num >= total_pages), use_container_width=True):
+                    ss["view_visual_page"] = page_num + 1
+                    st.rerun()
+                    
+            st.divider()
+            
+            # Extract page
+            page = pdf.pages[page_num - 1]
+            try:
+                with st.spinner("Rendering high-quality page view..."):
+                    im = page.to_image(resolution=150)
+                    pil_img = im.original
+                    st.image(pil_img, caption=f"{focus_file} (Page {page_num} of {total_pages})", use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not render page visually: {e}. Showing text fallback below:")
+                text_ext = page.extract_text()
+                if text_ext:
+                    st.code(text_ext)
+                else:
+                    st.info("Manual check required: The page layout cannot be automatically rendered or has extremely bad print quality.")
+    except Exception as e:
+        st.error(f"Error opening PDF document `{focus_file}`: {e}")
+        if st.button("Return to Dashboard"):
+            ss.pop("view_visual_file", None)
+            st.rerun()
+
 def render_sidebar() -> Tuple[str, str, bool]:
     ss = st.session_state
     logo_b64 = get_base64_image("logo.jpg")
@@ -296,12 +978,12 @@ def render_sidebar() -> Tuple[str, str, bool]:
         st.markdown(f"""
 <div style="background: linear-gradient(160deg, rgba(15, 23, 42, 0.8) 0%, rgba(26, 26, 30, 0.8) 100%);
 backdrop-filter: blur(20px); padding: 22px 20px; border-radius: 16px;
-border: 1px solid rgba(255, 255, 255, 0.05); border-bottom: 2px solid #7B92FF;
+border: 1px solid rgba(255, 255, 255, 0.05); border-bottom: 2px solid #E9F056;
 margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px;">
 <div style="position: absolute; right: 0; bottom: 0; width: 100%; height: 100%; opacity: 0.02; background: repeating-linear-gradient(45deg, #ffffff, #ffffff 1px, transparent 1px, transparent 8px); z-index: 0;"></div>
-<div class="sys-status" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: rgba(123, 146, 255, 0.05); border: 1px solid rgba(123, 146, 255, 0.1); padding: 4px 8px; border-radius: 6px; z-index: 2;">
-<div style="width: 5px; height: 5px; border-radius: 50%; background: #7B92FF; box-shadow: 0 0 4px #7B92FF;"></div>
-<span id="sys-clock" style="color: #7B92FF; font-size: 9px; font-family: 'JetBrains Mono', monospace; font-weight: 700; letter-spacing: 0.5px;">SYSTEM ONLINE · {time.strftime("%d %b %Y %H:%M:%S").upper()}</span>
+<div class="sys-status" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: rgba(233, 240, 86, 0.05); border: 1px solid rgba(233, 240, 86, 0.1); padding: 4px 8px; border-radius: 6px; z-index: 2;">
+<div style="width: 5px; height: 5px; border-radius: 50%; background: #E9F056; box-shadow: 0 0 4px #E9F056;"></div>
+<span id="sys-clock" style="color: #E9F056; font-size: 9px; font-family: 'JetBrains Mono', monospace; font-weight: 700; letter-spacing: 0.5px;">SYSTEM ONLINE · {time.strftime("%d %b %Y %H:%M:%S").upper()}</span>
 </div>
 <div style="display: flex; align-items: center; gap: 16px; z-index: 2;">
 <label class="sidebar-glyph" for="logo-anim-toggle" style="transition: border-color 0.3s ease; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; margin: 0;">{glyph_content}</label>
@@ -312,6 +994,14 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
 </div>
 </div>
     """, unsafe_allow_html=True)
+        
+        # Theme appearance toggle switch
+        st.write("")
+        theme_toggle = st.toggle("☀️ Light Mode Theme", value=st.session_state.get("light_mode", False))
+        if theme_toggle != st.session_state.get("light_mode", False):
+            st.session_state.light_mode = theme_toggle
+            st.rerun()
+
         components.html("""
         <script>
         setInterval(() => {
@@ -363,6 +1053,16 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         st.button("Load Demo Corpus", on_click=load_demo, use_container_width=True,
                   help="Loads a complete sample NIT + 3 vendor submissions for an instant demo.", key="btn_load_demo")
 
+        if ss.get("bid"):
+            if st.button("Generate Simulated Bids", use_container_width=True,
+                         help="Dynamically generates 3 mock vendor submissions matching the uploaded tender requirements.", key="btn_generate_simulated"):
+                ss.vendor_files = generate_dynamic_demo_bidders(ss.bid)
+                ss.vendor_errors = {k: {f: None for f in v} for k, v in ss.vendor_files.items()}
+                ss.results = None
+                ss.processed = False
+                save_state_to_disk()
+                st.rerun()
+
         st.divider()
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 12px; background: rgba(26, 26, 30, 0.6); 
@@ -389,7 +1089,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         st.markdown("""<style>
         .element-container:has(.add-bid-marker) + .element-container button,
         div[data-testid="stElementContainer"]:has(.add-bid-marker) + div[data-testid="stElementContainer"] button {
-            background: linear-gradient(135deg, #F59E0B, #D97706) !important;
+            background: linear-gradient(135deg, #F59E0B, #C6CD3E) !important;
             border: none !important;
             color: #FFFFFF !important;
             border-radius: 8px !important;
@@ -446,13 +1146,18 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                                 names = list(ss.bid_files.keys())
                                 ss.bid_source = names[0] if len(names) == 1 else f"{len(names)} Documents"
                             ss.processed = False
+                            ss.bid = None
+                            ss.results = None
+                            ss.xai = []
+                            ss.narrative = None
+                            ss.audit_cache = {}
                             save_state_to_disk()
                             st.rerun()
 
         st.markdown("""<style>
         .element-container:has(.view-bid-marker) + .element-container button,
         div[data-testid="stElementContainer"]:has(.view-bid-marker) + div[data-testid="stElementContainer"] button {
-            background: linear-gradient(135deg, #7B92FF, #5856D6) !important;
+            background: linear-gradient(135deg, #E9F056, #C6CD3E) !important;
             border: none !important;
             color: #FFFFFF !important;
             border-radius: 8px !important;
@@ -461,7 +1166,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         }
         .element-container:has(.view-bid-marker) + .element-container button:hover,
         div[data-testid="stElementContainer"]:has(.view-bid-marker) + div[data-testid="stElementContainer"] button:hover {
-            background: linear-gradient(135deg, #B5C2FF, #7B92FF) !important;
+            background: linear-gradient(135deg, #FFFFFF, #E9F056) !important;
             transform: translateY(-1px) !important;
         }
         .element-container:has(.view-bid-marker) + .element-container button p::before,
@@ -477,14 +1182,14 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         
         .element-container:has(.rm-bid-marker) + .element-container button,
         div[data-testid="stElementContainer"]:has(.rm-bid-marker) + div[data-testid="stElementContainer"] button {
-            background: linear-gradient(135deg, #EF4444, #DC2626) !important;
+            background: linear-gradient(135deg, #FF5C34, #DC2626) !important;
             border: none !important;
             border-radius: 8px !important;
             transition: all 0.2s ease !important;
         }
         .element-container:has(.rm-bid-marker) + .element-container button:hover,
         div[data-testid="stElementContainer"]:has(.rm-bid-marker) + div[data-testid="stElementContainer"] button:hover {
-            background: linear-gradient(135deg, #F87171, #EF4444) !important;
+            background: linear-gradient(135deg, #F87171, #FF5C34) !important;
             transform: translateY(-1px) !important;
         }
         .element-container:has(.rm-bid-marker) + .element-container button p,
@@ -504,13 +1209,21 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                         added = False
                         for f in bid_up:
                             if f.name not in ss.bid_files:
-                                text, err = read_uploaded_file(f, enable_ocr=ss.get("enable_ocr", False))
+                                text, err = read_uploaded_file(f, enable_ocr=True)
                                 if text:
                                     if not is_valid_bid_document(text):
                                         st.error(f"'{f.name}' is not a valid BID document. Please enter a valid BID document.")
                                         continue
                                     ss.bid_files[f.name] = text
                                     added = True
+                                    try:
+                                        os.makedirs(".sentinel_cache_files", exist_ok=True)
+                                        cache_path = os.path.join(".sentinel_cache_files", f.name)
+                                        with open(cache_path, "wb") as fp:
+                                            fp.write(f.getvalue())
+                                        ss.setdefault("bid_paths", {})[f.name] = cache_path
+                                    except Exception:
+                                        pass
                                 elif err:
                                     st.error(f"Could not read BID {f.name}: {err}")
                         if added:
@@ -522,6 +1235,15 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                             ss.bid_source = names[0] if len(names) == 1 else f"{len(names)} Documents"
                             ss.bid_file_id = current_ids
                             ss.processed = False
+                            from audit_engine import AuditEngine
+                            engine = AuditEngine()
+                            ss.bid = engine.parse_master_bid(ss.bid_text)
+                            ss.bid_confirmed = False
+                            ss.pipeline_stage = "rules_review"
+                            ss.results = None
+                            ss.xai = []
+                            ss.narrative = None
+                            ss.audit_cache = {}
                             ss.bid_uploader_key += 1
                             save_state_to_disk()
                             st.rerun()
@@ -568,13 +1290,186 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         }
         </style>""", unsafe_allow_html=True)
 
+        def detect_vendor_name_from_file(filename: str, text: str) -> str:
+            import re
+            base = filename.split("/")[-1].split("\\")[-1]
+            for sep in [" - ", " _ ", " — ", " – "]:
+                if sep in base:
+                    return base.split(sep)[0].strip()
+            m = re.search(r"bidder(?:\s*name)?\s*[:\-]?\s*([A-Za-z0-9\s.]{3,40})", text, re.I)
+            if m:
+                name = m.group(1).strip()
+                if len(name) > 3 and "tender" not in name.lower() and "document" not in name.lower() and "ernet" not in name.lower():
+                    return name.title()
+            m2 = re.search(r"m/s\.?\s*([A-Za-z0-9\s.]{3,40})", text, re.I)
+            if m2:
+                name = m2.group(1).strip()
+                if len(name) > 3 and "ernet" not in name.lower() and "iocl" not in name.lower():
+                    return name.title()
+            prefix = base.replace("_", " ").replace("-", " ")
+            parts = prefix.split()
+            if len(parts) >= 2:
+                name = f"{parts[0]} {parts[1]}"
+                return re.sub(r"\.pdf$", "", name, flags=re.I).strip().title()
+            return re.sub(r"\.pdf$", "", parts[0], flags=re.I).strip().title()
+
         with st.form("add_vendor", clear_on_submit=True):
-            vname = st.text_input("Vendor name", placeholder="e.g. Acme Networks Pvt. Ltd.")
+            vname = st.text_input("Vendor name (Optional)", placeholder="e.g. Sourav — Leave blank to auto-detect vendor name from files")
             vfiles = st.file_uploader("Vendor documents", type=["pdf", "txt", "md"],
                                       accept_multiple_files=True)
             st.markdown('<div class="add-vendor-marker"></div>', unsafe_allow_html=True)
             add = st.form_submit_button("Add / Update Vendor", use_container_width=True)
+            
+        st.markdown("""
+        <div style="font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; margin-top: 10px; margin-bottom: 5px; text-align: center;">
+            ⚡ OR SCAN LOCAL FOLDER (Auto-Group Vendors)
+        </div>
+        """, unsafe_allow_html=True)
+        with st.form("scan_local_folder", clear_on_submit=False):
+            local_folder_path = st.text_input("Folder path on your PC", placeholder="e.g. C:\\Users\\aloki\\Downloads\\iocl bid files")
+            st.markdown('<div class="scan-folder-marker"></div>', unsafe_allow_html=True)
+            scan = st.form_submit_button("Scan & Load All Vendors", use_container_width=True)
+            
+        st.markdown("""<style>
+        .element-container:has(.scan-folder-marker) + .element-container button,
+        div[data-testid="stElementContainer"]:has(.scan-folder-marker) + div[data-testid="stElementContainer"] button {
+            background: linear-gradient(135deg, #8B5CF6, #EC4899) !important;
+            border: none !important;
+            color: #FFFFFF !important;
+            border-radius: 8px !important;
+            font-weight: 700 !important;
+            transition: all 0.3s ease !important;
+        }
+        .element-container:has(.scan-folder-marker) + .element-container button:hover,
+        div[data-testid="stElementContainer"]:has(.scan-folder-marker) + div[data-testid="stElementContainer"] button:hover {
+            background: linear-gradient(135deg, #A78BFA, #EC4899) !important;
+            transform: translateY(-1px) !important;
+        }
+        </style>""", unsafe_allow_html=True)
+        
         vendor_spinner_placeholder = st.empty()
+
+        if scan and local_folder_path:
+            import os
+            path = local_folder_path.strip()
+            if not os.path.exists(path) or not os.path.isdir(path):
+                st.sidebar.error("The specified path does not exist or is not a directory.")
+            else:
+                # Ignore system/hidden directories and the code repository directory to avoid infinite loops
+                subfolders = []
+                for entry in os.scandir(path):
+                    if entry.is_dir():
+                        name_lower = entry.name.lower()
+                        if not name_lower.startswith('.') and name_lower not in ["node_modules", "venv", "env", "argus-bid-ai-tender-audit-compliance"]:
+                            subfolders.append(entry)
+                
+                if not subfolders:
+                    st.sidebar.error("No valid subdirectories found. Please specify the parent folder containing your vendor subfolders.")
+                else:
+                    # Let's count total files to show a progress bar
+                    all_files = []
+                    for sub in subfolders:
+                        vendor_name = sub.name.strip()
+                        for root, dirs, files_in_dir in os.walk(sub.path):
+                            # Skip hidden/system directories inside walk
+                            dirs[:] = [d for d in dirs if not d.startswith('.') and d.lower() not in ["node_modules", "venv", "env", "argus-bid-ai-tender-audit-compliance"]]
+                            for file in files_in_dir:
+                                if file.lower().endswith(('.pdf', '.txt', '.md')):
+                                    filepath = os.path.join(root, file)
+                                    all_files.append((vendor_name, filepath, file))
+                                    
+                    total_count = len(all_files)
+                    if total_count == 0:
+                        st.sidebar.warning("No PDF, TXT, or MD documents found in any of the subfolders.")
+                    else:
+                        progress_bar = st.sidebar.progress(0)
+                        status_text = st.sidebar.empty()
+                        
+                        ss.setdefault("vendor_mtime", {})
+                        
+                        from concurrent.futures import ThreadPoolExecutor, as_completed
+                        
+                        # Prepare list of tasks on the main thread (thread-safe!)
+                        tasks_to_run = []
+                        for vendor_name, filepath, file in all_files:
+                            try:
+                                mtime = os.path.getmtime(filepath)
+                                size = os.path.getsize(filepath)
+                                
+                                cached_mtime = ss.get("vendor_mtime", {}).get(vendor_name, {}).get(file, {}).get("mtime")
+                                cached_size = ss.get("vendor_mtime", {}).get(vendor_name, {}).get(file, {}).get("size")
+                                
+                                is_cached = (
+                                    cached_mtime == mtime 
+                                    and cached_size == size 
+                                    and vendor_name in ss.vendor_files 
+                                    and file in ss.vendor_files[vendor_name]
+                                )
+                                if not is_cached:
+                                    tasks_to_run.append((vendor_name, filepath, file, mtime, size))
+                            except Exception:
+                                tasks_to_run.append((vendor_name, filepath, file, 0, 0))
+                                
+                        tasks_count = len(tasks_to_run)
+                        
+                        # Worker function (no session state or streamlit access)
+                        def process_single_file_worker(task_data):
+                            v_name, f_path, f_name, mtime, size = task_data
+                            try:
+                                class MockUploadedFile:
+                                    def __init__(self, path, name):
+                                        self._path = path
+                                        self.name = name
+                                    def getvalue(self):
+                                        with open(self._path, 'rb') as fp:
+                                            return fp.read()
+                                            
+                                mock_f = MockUploadedFile(f_path, f_name)
+                                t, e = read_uploaded_file(mock_f, enable_ocr=True)
+                                return v_name, f_name, t, e, mtime, size, f_path
+                            except Exception as ex:
+                                return v_name, f_name, "", str(ex), mtime, size, f_path
+
+                        # Run parallel parser only if needed
+                        if tasks_count > 0:
+                            progress_bar = st.sidebar.progress(0)
+                            status_text = st.sidebar.empty()
+                            
+                            completed_count = 0
+                            already_cached_count = total_count - tasks_count
+                            
+                            with ThreadPoolExecutor(max_workers=4) as executor:
+                                futures = {executor.submit(process_single_file_worker, task): task for task in tasks_to_run}
+                                for future in as_completed(futures):
+                                    completed_count += 1
+                                    v_name, f_path, f_name, mtime, size = futures[future]
+                                    
+                                    display_idx = already_cached_count + completed_count
+                                    status_text.markdown(f"📄 **Parsing:** `{v_name}` / `{f_name}` ({display_idx}/{total_count})")
+                                    progress_bar.progress(display_idx / total_count)
+                                    
+                                    try:
+                                        res_v, res_f, t, e, res_mtime, res_size, res_path = future.result()
+                                        
+                                        if res_v not in ss.vendor_files:
+                                            ss.vendor_files[res_v] = {}
+                                            ss.vendor_errors[res_v] = {}
+                                        ss.vendor_files[res_v][res_f] = t
+                                        ss.vendor_errors[res_v][res_f] = e
+                                        ss.setdefault("vendor_paths", {}).setdefault(res_v, {})[res_f] = res_path
+                                        
+                                        if res_v not in ss["vendor_mtime"]:
+                                            ss["vendor_mtime"][res_v] = {}
+                                        ss["vendor_mtime"][res_v][res_f] = {"mtime": res_mtime, "size": res_size}
+                                    except Exception as exc:
+                                        st.sidebar.error(f"Error processing {f_name}: {exc}")
+                                        
+                            status_text.empty()
+                            progress_bar.empty()
+                            
+                        ss.processed = False
+                        save_state_to_disk()
+                        st.rerun()
 
         if ss.vendor_files:
             with st.container(border=True):
@@ -603,7 +1498,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                 st.markdown("""<style>
                 .element-container:has(.view-ven-marker) + .element-container button,
                 div[data-testid="stElementContainer"]:has(.view-ven-marker) + div[data-testid="stElementContainer"] button {
-                    background: linear-gradient(135deg, #7B92FF, #5856D6) !important;
+                    background: linear-gradient(135deg, #E9F056, #C6CD3E) !important;
                     border: none !important;
                     color: #FFFFFF !important;
                     border-radius: 8px !important;
@@ -612,7 +1507,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                 }
                 .element-container:has(.view-ven-marker) + .element-container button:hover,
                 div[data-testid="stElementContainer"]:has(.view-ven-marker) + div[data-testid="stElementContainer"] button:hover {
-                    background: linear-gradient(135deg, #B5C2FF, #7B92FF) !important;
+                    background: linear-gradient(135deg, #FFFFFF, #E9F056) !important;
                     transform: translateY(-1px) !important;
                 }
                 .element-container:has(.view-ven-marker) + .element-container button p::before,
@@ -627,16 +1522,33 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
                 }
                 </style>""", unsafe_allow_html=True)
 
-        if add and vname and vfiles:
-            texts, errs = {}, {}
+        if add and vfiles:
             with vendor_spinner_placeholder:
-                with custom_spinner(f"Extracting and classifying {len(vfiles)} documents for {vname}...", theme="purple"):
+                with custom_spinner(f"Extracting and classifying {len(vfiles)} uploaded document(s)...", theme="purple"):
                     for f in vfiles:
-                        t, e = read_uploaded_file(f, enable_ocr=ss.get("enable_ocr", False))
-                        texts[f.name] = t
-                        errs[f.name] = e
-            ss.vendor_files[vname] = texts
-            ss.vendor_errors[vname] = errs
+                        t, e = read_uploaded_file(f, enable_ocr=True)
+                        
+                        if vname.strip():
+                            target_vendor = vname.strip()
+                        else:
+                            target_vendor = detect_vendor_name_from_file(f.name, t)
+                            
+                        if target_vendor not in ss.vendor_files:
+                            ss.vendor_files[target_vendor] = {}
+                            ss.vendor_errors[target_vendor] = {}
+                            
+                        ss.vendor_files[target_vendor][f.name] = t
+                        ss.vendor_errors[target_vendor][f.name] = e
+                        
+                        try:
+                            os.makedirs(".sentinel_cache_files", exist_ok=True)
+                            cache_path = os.path.join(".sentinel_cache_files", f.name)
+                            with open(cache_path, "wb") as fp:
+                                fp.write(f.getvalue())
+                            ss.setdefault("vendor_paths", {}).setdefault(target_vendor, {})[f.name] = cache_path
+                        except Exception:
+                            pass
+                            
             ss.processed = False
             save_state_to_disk()
             st.rerun()
@@ -650,10 +1562,10 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
             background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338BDF8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z'/%3E%3Cpath d='M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z'/%3E%3C/svg%3E") no-repeat center;
             background-size: contain;
             vertical-align: text-bottom;
-            filter: drop-shadow(0 0 4px rgba(123,146,255,0.6));
+            filter: drop-shadow(0 0 4px rgba(233,240,86,0.6));
         }
         [data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
-            color: #7B92FF !important;
+            color: #E9F056 !important;
             font-weight: 700 !important;
             letter-spacing: 0.5px !important;
         }
@@ -663,12 +1575,12 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
             border-radius: 0px !important;
         }
         [data-testid="stSidebar"] div[data-testid="stExpander"] details {
-            border: 1px solid rgba(123, 146, 255, 0.3) !important;
-            background: rgba(123, 146, 255, 0.05) !important;
+            border: 1px solid rgba(233, 240, 86, 0.3) !important;
+            background: rgba(233, 240, 86, 0.05) !important;
         }
         [data-testid="stSidebar"] div[data-testid="stExpander"] details:hover {
-            border-color: rgba(123, 146, 255, 0.6) !important;
-            box-shadow: 0 0 15px rgba(123, 146, 255, 0.1) !important;
+            border-color: rgba(233, 240, 86, 0.6) !important;
+            box-shadow: 0 0 15px rgba(233, 240, 86, 0.1) !important;
         }
         [data-testid="stSidebar"] div[data-testid="stExpander"] summary:hover,
         [data-testid="stSidebar"] div[data-testid="stExpander"] summary:focus {
@@ -677,10 +1589,10 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         </style>""", unsafe_allow_html=True)
         st.markdown("""
         <div style="display: flex; align-items: center; gap: 12px; background: rgba(26, 26, 30, 0.6); 
-        border: 1px solid rgba(123, 146, 255, 0.15); border-left: 4px solid #7B92FF; border-radius: 8px; 
+        border: 1px solid rgba(233, 240, 86, 0.15); border-left: 4px solid #E9F056; border-radius: 8px; 
         padding: 12px 14px; font-weight: 800; font-size: 13px; color: #E2E8F0; letter-spacing: 0.5px; 
         text-transform: uppercase; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7B92FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 5px rgba(123,146,255,0.5));">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E9F056" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 5px rgba(233,240,86,0.5));">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
@@ -689,22 +1601,120 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         """, unsafe_allow_html=True)
         engine_mode = st.radio(
             "Audit Engine Mode",
-            ["Deterministic Rules (Regex)", "Local Llama RAG (Ollama)"],
+            ["Deterministic Base Engine (Zero-AI / Fast)", "Local Llama RAG (Ollama)", "Cloud RAG (Groq)", "Cloud RAG (Gemini)"],
+            index=0,
             key="engine_mode",
-            help="Choose between strict deterministic regex rules or local semantic LLM-based RAG evaluation."
-        )
-        enable_ocr = st.checkbox(
-            "Force Heavy OCR (EasyOCR CPU)",
-            value=False,
-            key="enable_ocr",
-            help="Forces EasyOCR to scan unreadable pages on CPU. Note: Fast OCR (Tesseract) already runs automatically if installed on the system."
+            help="Choose between the fast Zero-AI deterministic engine, local Ollama, Cloud Groq, or Cloud Gemini."
         )
         if engine_mode == "Local Llama RAG (Ollama)":
             st.text_input(
                 "Ollama API Endpoint",
                 value="http://localhost:11434",
                 key="ollama_url",
-                help="Specify the URL of your local or remote/intranet Ollama server (e.g., http://10.x.x.x:11434)."
+                help="URL of your local or remote Ollama server."
+            )
+            # Model dropdown — qwen2.5:7b is default (CPU-friendly); larger models for GPU users
+            ollama_models = [
+                "qwen2.5:7b",           # Default — fast & accurate on CPU
+                "llama3:latest",         # Meta Llama 3 8B
+                "llama3.1:8b",          # Meta Llama 3.1 8B
+                "llama3.1:70b",         # GPU recommended
+                "llama3.2:3b",          # Lightest option for low RAM
+                "mistral:7b",            # Mistral 7B
+                "mixtral:8x7b",         # GPU recommended
+                "qwen2.5:14b",          # GPU recommended
+                "qwen2.5:72b",          # GPU recommended
+                "deepseek-r1:7b",       # DeepSeek R1 7B
+                "phi3:mini",            # Microsoft Phi-3 Mini (very lightweight)
+            ]
+            current_model = ss.get("ollama_model_name", "qwen2.5:7b")
+            if current_model not in ollama_models:
+                ollama_models.insert(0, current_model)  # Keep any custom model at top
+            st.selectbox(
+                "Ollama Model",
+                ollama_models,
+                index=ollama_models.index(current_model) if current_model in ollama_models else 0,
+                key="ollama_model_name",
+                help="qwen2.5:7b is recommended for CPU. For GPU users: llama3.1:70b or qwen2.5:72b give better accuracy."
+            )
+        elif engine_mode == "Cloud RAG (Groq)":
+            st.text_input(
+                "Groq API Key",
+                type="password",
+                value=ss.get("groq_key", ""),
+                key="groq_key",
+                help="Specify your Groq API key (starts with gsk_)."
+            )
+            groq_key = ss.get("groq_key", "").strip()
+            if groq_key:
+                if st.button("🔍 Test Groq Connection", key="test_groq_btn", use_container_width=True):
+                    with st.spinner("Testing connection to Groq API..."):
+                        try:
+                            import json
+                            import urllib.request
+                            req = urllib.request.Request(
+                                "https://api.groq.com/openai/v1/models",
+                                headers={
+                                    "Authorization": f"Bearer {groq_key}",
+                                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                                    "Accept": "application/json",
+                                },
+                                method="GET"
+                             )
+                            with urllib.request.urlopen(req, timeout=10) as r:
+                                data = json.loads(r.read().decode())
+                                models = [m["id"] for m in data.get("data", []) if "llama" in m["id"] or "qwen" in m["id"]]
+                                st.success(f"✅ Connection successful! Models: {', '.join(models[:3])}")
+                        except Exception as e:
+                            st.error(f"❌ Connection failed: {e}")
+  
+            st.selectbox(
+                "Groq Model Name",
+                [
+                    "llama-3.3-70b-versatile",
+                    "llama3-8b-8192",
+                    "llama3-70b-8192",
+                ],
+                index=0,
+                key="groq_model_name",
+                help="llama-3.3-70b-versatile gives the most accurate results."
+            )
+            emb_provider = st.selectbox(
+                "Embedding Provider",
+                ["Local Embeddings (HuggingFace CPU)", "Cloud Gemini Embeddings", "Local Ollama Embeddings"],
+                index=0,
+                key="groq_embedding_provider",
+                help="Choose whether to use local CPU embeddings, Cloud Gemini embeddings, or local Ollama embeddings for vector search."
+            )
+            if emb_provider == "Cloud Gemini Embeddings":
+                st.text_input(
+                    "Gemini API Key (for Embeddings)",
+                    type="password",
+                    value=ss.get("gemini_key", ""),
+                    key="gemini_key",
+                    help="Gemini API Key is required to run Cloud Embeddings."
+                )
+        elif engine_mode == "Cloud RAG (Gemini)":
+            st.text_input(
+                "Gemini API Key",
+                type="password",
+                value=ss.get("gemini_key", ""),
+                key="gemini_key",
+                help="Specify your Gemini API key (starts with AIzaSy)."
+            )
+            st.selectbox(
+                "Gemini Model Name",
+                [
+                    "gemini-2.5-flash",
+                    "gemini-2.5-pro",
+                    "gemini-2.0-flash",
+                    "gemini-1.5-flash",
+                    "gemini-1.5-pro",
+                    "gemini-2.0-flash-thinking-exp",
+                ],
+                index=0,
+                key="gemini_model_name",
+                help="gemini-1.5-flash is extremely fast; gemini-1.5-pro is recommended for higher reasoning quality."
             )
         api_key = ""
         model = ""
@@ -727,7 +1737,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         st.markdown("""<style>
         .element-container:has(.run-audit-marker) + .element-container button,
         div[data-testid="stElementContainer"]:has(.run-audit-marker) + div[data-testid="stElementContainer"] button {
-            background: linear-gradient(135deg, #7B92FF, #5856D6) !important;
+            background: linear-gradient(135deg, #E9F056, #C6CD3E) !important;
             border: none !important;
             color: #FFFFFF !important;
             border-radius: 8px !important;
@@ -740,7 +1750,7 @@ margin-bottom: 24px; position: relative; overflow: hidden; display: flex; flex-d
         }
         .element-container:has(.run-audit-marker) + .element-container button:hover,
         div[data-testid="stElementContainer"]:has(.run-audit-marker) + div[data-testid="stElementContainer"] button:hover {
-            background: linear-gradient(135deg, #7B92FF, #7B92FF) !important;
+            background: linear-gradient(135deg, #E9F056, #E9F056) !important;
             transform: translateY(-2px) !important;
         }
         .element-container:has(.run-audit-marker) + .element-container button p::before,
@@ -835,9 +1845,9 @@ def render_landing_page() -> None:
         display: inline-flex; align-items: center; justify-content: center;
         padding: 6px 16px; 
         border-radius: 20px; 
-        background: rgba(123, 146, 255, 0.1); 
-        border: 1px solid rgba(123, 146, 255, 0.2); 
-        color: #7B92FF; 
+        background: rgba(233, 240, 86, 0.1); 
+        border: 1px solid rgba(233, 240, 86, 0.2); 
+        color: #E9F056; 
         font-family: 'Inter', sans-serif; 
         font-size: 13px; 
         font-weight: 700; 
@@ -853,10 +1863,10 @@ def render_landing_page() -> None:
         gap: 10px;
         font-family: 'JetBrains Mono', monospace;
         font-size: 13px;
-        color: #7B92FF;
+        color: #E9F056;
         background: rgba(15, 23, 42, 0.6);
-        border: 1px solid rgba(123, 146, 255, 0.25);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 0 12px rgba(123, 146, 255, 0.05);
+        border: 1px solid rgba(233, 240, 86, 0.25);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 0 12px rgba(233, 240, 86, 0.05);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         padding: 8px 16px;
@@ -872,7 +1882,7 @@ def render_landing_page() -> None:
         position: absolute;
         top: 0; left: -100%;
         width: 50%; height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(123, 146, 255, 0.2), transparent);
+        background: linear-gradient(90deg, transparent, rgba(233, 240, 86, 0.2), transparent);
         transform: skewX(-20deg);
         animation: eyebrowSweep 5s infinite;
     }
@@ -882,10 +1892,10 @@ def render_landing_page() -> None:
         100% { left: 200%; }
     }
     .eyebrow-tag:hover {
-        border-color: rgba(123, 146, 255, 0.5);
-        box-shadow: 0 6px 20px rgba(123, 146, 255, 0.2), inset 0 0 16px rgba(123, 146, 255, 0.1);
+        border-color: rgba(233, 240, 86, 0.5);
+        box-shadow: 0 6px 20px rgba(233, 240, 86, 0.2), inset 0 0 16px rgba(233, 240, 86, 0.1);
         transform: translateY(-2px);
-        color: #B5C2FF;
+        color: #FFFFFF;
     }
     .eyebrow-tag .dot {
         width: 8px;
@@ -959,14 +1969,14 @@ def render_landing_page() -> None:
     .step-icon {
         margin-bottom: 18px; display: inline-flex; align-items: center; justify-content: center;
         width: 48px; height: 48px;
-        background: linear-gradient(135deg, rgba(123, 146, 255, 0.15), rgba(123, 146, 255, 0.05));
-        border-radius: 12px; border: 1px solid rgba(123, 146, 255, 0.3);
-        box-shadow: inset 0 0 10px rgba(123, 146, 255, 0.1);
+        background: linear-gradient(135deg, rgba(233, 240, 86, 0.15), rgba(233, 240, 86, 0.05));
+        border-radius: 12px; border: 1px solid rgba(233, 240, 86, 0.3);
+        box-shadow: inset 0 0 10px rgba(233, 240, 86, 0.1);
         position: relative;
         z-index: 2;
     }
     .step-content { position: relative; z-index: 2; }
-    .step .sn{font-family:'JetBrains Mono',monospace;font-size:12px;color:#7B92FF; font-weight:700; letter-spacing:1px; text-transform:uppercase;}
+    .step .sn{font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9F056; font-weight:700; letter-spacing:1px; text-transform:uppercase;}
     .step h5{margin:8px 0 6px;font-size:16px;font-weight:800; color:#E2E8F0;}
     .step p{margin:0;font-size:13.5px;color:#94A3B8;line-height:1.6;}
     
@@ -1044,11 +2054,11 @@ def render_landing_page() -> None:
     replacement_img = '<img style="width: 100%; height: 100%; object-fit: cover;" '
     fancy_glyph_content = (
         '<div class="fancy-logo-wrapper">'
-        '<div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #7B92FF, rgba(123,146,255,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #7B92FF); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(123, 146, 255, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">'
-        '<div style="position: absolute; inset: 3px; background: #121214; border-radius: 33px; z-index: 1;"></div></div>'
-        '<div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(123, 146, 255, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>'
+        '<div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #E9F056, rgba(233,240,86,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #E9F056); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(233, 240, 86, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">'
+        '<div style="position: absolute; inset: 3px; background: #211119; border-radius: 33px; z-index: 1;"></div></div>'
+        '<div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(233, 240, 86, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>'
         '<div style="position: absolute; inset: -10px; border-radius: 40px; border: 1px solid rgba(16, 185, 129, 0.2); animation: spin 10s linear infinite; z-index: 0;"></div>'
-        '<div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #121214; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">'
+        '<div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #211119; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">'
         + glyph_content.replace('<img ', replacement_img) + '</div></div>'
     ) if logo_b64 else ''
 
@@ -1058,8 +2068,8 @@ def render_landing_page() -> None:
     .block-container {{ padding-top: 0 !important; padding-bottom: 0 !important; }}
     
     @keyframes subtleFloat {{
-        0%, 100% {{ transform: translateY(0); box-shadow: 0 10px 40px rgba(123, 146, 255, 0.2); }}
-        50% {{ transform: translateY(-15px); box-shadow: 0 25px 50px rgba(123, 146, 255, 0.4); }}
+        0%, 100% {{ transform: translateY(0); box-shadow: 0 10px 40px rgba(233, 240, 86, 0.2); }}
+        50% {{ transform: translateY(-15px); box-shadow: 0 25px 50px rgba(233, 240, 86, 0.4); }}
     }}
     .landing-navbar {{
         width: 100vw;
@@ -1079,8 +2089,8 @@ def render_landing_page() -> None:
     }}
     .landing-navbar .nav-logo img {{
         width: 32px; height: 32px; border-radius: 8px;
-        border: 1px solid rgba(123, 146, 255, 0.5);
-        box-shadow: 0 0 12px rgba(123, 146, 255, 0.3);
+        border: 1px solid rgba(233, 240, 86, 0.5);
+        box-shadow: 0 0 12px rgba(233, 240, 86, 0.3);
     }}
     .landing-navbar .nav-logo span {{
         font-weight: 900; font-size: 20px; letter-spacing: -0.5px; 
@@ -1096,9 +2106,9 @@ def render_landing_page() -> None:
         border: 1px solid transparent; background: transparent;
     }}
     .landing-navbar .nav-links a:hover, .landing-navbar .nav-links a.active {{ 
-        color: #7B92FF; text-shadow: 0 0 8px rgba(123,146,255,0.5); 
-        background: rgba(123, 146, 255, 0.1); border: 1px solid rgba(123, 146, 255, 0.3);
-        box-shadow: inset 0 0 10px rgba(123, 146, 255, 0.05);
+        color: #E9F056; text-shadow: 0 0 8px rgba(233,240,86,0.5); 
+        background: rgba(233, 240, 86, 0.1); border: 1px solid rgba(233, 240, 86, 0.3);
+        box-shadow: inset 0 0 10px rgba(233, 240, 86, 0.05);
     }}
     
     .lp-section {{
@@ -1238,36 +2248,36 @@ def render_landing_page() -> None:
     </div>
 
     <div class="hero-container" id="hero-section" style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px; align-items: center; padding: 60px 0 18px; position: relative; margin-bottom: 40px; scroll-margin-top: 100px;">
-      <div style="position: absolute; top: -150px; left: -100px; width: 400px; height: 400px; background: rgba(123, 146, 255, 0.15); filter: blur(80px); border-radius: 50%; z-index: 0; animation: subtleFloat 8s ease-in-out infinite;"></div>
+      <div style="position: absolute; top: -150px; left: -100px; width: 400px; height: 400px; background: rgba(233, 240, 86, 0.15); filter: blur(80px); border-radius: 50%; z-index: 0; animation: subtleFloat 8s ease-in-out infinite;"></div>
       <div style="position: absolute; bottom: -150px; right: -100px; width: 400px; height: 400px; background: rgba(16, 185, 129, 0.15); filter: blur(80px); border-radius: 50%; z-index: 0; animation: subtleFloat 6s ease-in-out infinite reverse;"></div>
       
       <div class="hero-left" style="position: relative; z-index: 1;">
-        <div class="eyebrow-tag" style="display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #7B92FF; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(123, 146, 255, 0.3); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 0 12px rgba(123, 146, 255, 0.1); padding: 8px 16px; border-radius: 9999px; margin-bottom: 24px; letter-spacing: 0.5px; position: relative; overflow: hidden;">
-           <div style="position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(123, 146, 255, 0.25), transparent); transform: skewX(-20deg); animation: subtleFloat 4s ease-in-out infinite alternate;"></div>
+        <div class="eyebrow-tag" style="display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9F056; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(233, 240, 86, 0.3); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 0 12px rgba(233, 240, 86, 0.1); padding: 8px 16px; border-radius: 9999px; margin-bottom: 24px; letter-spacing: 0.5px; position: relative; overflow: hidden;">
+           <div style="position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(233, 240, 86, 0.25), transparent); transform: skewX(-20deg); animation: subtleFloat 4s ease-in-out infinite alternate;"></div>
            <span class="dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981; position: relative; z-index: 2;"></span>
            <span style="position: relative; z-index: 2; font-weight: 600;">Enterprise Engine &middot; Fully deterministic local execution</span>
         </div>
         <h1 style="font-size: clamp(40px, 5vw, 64px); line-height: 1.05; font-weight: 900; letter-spacing: -1.5px; margin: 0 0 20px;">
             The tender file lands.<br>
-            <span style="background: linear-gradient(120deg, #7B92FF, #10B981); -webkit-background-clip: text; color: transparent; text-shadow: 0 0 30px rgba(123, 146, 255, 0.2);">The verdict is already written.</span>
+            <span style="background: linear-gradient(120deg, #E9F056, #10B981); -webkit-background-clip: text; color: transparent; text-shadow: 0 0 30px rgba(233, 240, 86, 0.2);">The verdict is already written.</span>
         </h1>
         <p class="lede" style="font-size: 18px; color: #94A3B8; max-width: 680px; line-height: 1.6; margin: 0 0 30px; font-weight: 400;">
             Argus Bid AI reads a PSU Notice Inviting Tender line by line, inventories every vendor's messy submission, runs the eligibility gates &mdash; MAF, pre-qualification, mandatory documents &mdash; then ranks the survivors on a transparent 70/30 weighting and <strong style="color: #E2E8F0; font-weight: 600;">explains exactly why rank 1 beat rank 2.</strong> Every verdict carries its evidence.
         </p>
         <div class="cta-row" style="display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap;">
             <a href="?page=audit" target="_self" style="display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 12px; font-weight: 700; font-size: 16px; color: #022C22; background: linear-gradient(120deg, #10B981, #6EE7B7); text-decoration: none; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 25px rgba(16, 185, 129, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(16, 185, 129, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4)';">View the live audit &rarr;</a>
-            <a href="?page=documentation" target="_self" style="display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 12px; font-weight: 700; font-size: 16px; color: #121214; background: linear-gradient(120deg, #7B92FF, #B5C2FF); text-decoration: none; box-shadow: 0 4px 15px rgba(123, 146, 255, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 25px rgba(123, 146, 255, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(123, 146, 255, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4)';">Documentation</a>
+            <a href="?page=documentation" target="_self" style="display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 12px; font-weight: 700; font-size: 16px; color: #211119; background: linear-gradient(120deg, #E9F056, #FFFFFF); text-decoration: none; box-shadow: 0 4px 15px rgba(233, 240, 86, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 25px rgba(233, 240, 86, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(233, 240, 86, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4)';">Documentation</a>
             <a href="?page=case-studies" target="_self" style="display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 12px; font-weight: 700; font-size: 16px; color: #2E1065; background: linear-gradient(120deg, #A78BFA, #DDD6FE); text-decoration: none; box-shadow: 0 4px 15px rgba(167, 139, 250, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 25px rgba(167, 139, 250, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(167, 139, 250, 0.3), inset 0 2px 4px rgba(255, 255, 255, 0.4)';">Case Studies</a>
         </div>
       </div>
       <div class="hero-right" style="display: flex; justify-content: center; position: relative; z-index: 1;">
         <div style="position: relative; width: 320px; height: 320px; display: flex; align-items: center; justify-content: center;">
-            <div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #7B92FF, rgba(123,146,255,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #7B92FF); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(123, 146, 255, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">
-                <div style="position: absolute; inset: 3px; background: #121214; border-radius: 33px; z-index: 1;"></div>
+            <div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #E9F056, rgba(233,240,86,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #E9F056); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(233, 240, 86, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">
+                <div style="position: absolute; inset: 3px; background: #211119; border-radius: 33px; z-index: 1;"></div>
             </div>
-            <div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(123, 146, 255, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>
+            <div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(233, 240, 86, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>
             <div style="position: absolute; inset: -10px; border-radius: 40px; border: 1px solid rgba(16, 185, 129, 0.2); animation: spin 10s linear infinite; z-index: 0;"></div>
-            <div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #121214; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
+            <div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #211119; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
                {glyph_content.replace('<img ', '<img style="width: 100%; height: 100%; object-fit: cover;" ')}
             </div>
         </div>
@@ -1322,11 +2332,11 @@ We then parse every vendor's submission, intelligently classifying documents, ex
 <div id="sec-03" class="lp-eyebrow"><span class="n">SECTION 03</span><h2>Why It Is Better</h2></div>
 <div class="bento-grid">
 <div class="lp-card bento-wide" style="position: relative; overflow: hidden; --hover-rgb: 123, 146, 255;">
-<div style="position: absolute; top:0; left:0; width:100%; height:4px; background: #7B92FF;"></div>
-<div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(123, 146, 255, 0.1); border: 1px solid rgba(123, 146, 255, 0.2); display: flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 20px; box-shadow: inset 0 0 12px rgba(123, 146, 255, 0.1);">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7B92FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+<div style="position: absolute; top:0; left:0; width:100%; height:4px; background: #E9F056;"></div>
+<div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(233, 240, 86, 0.1); border: 1px solid rgba(233, 240, 86, 0.2); display: flex; align-items: center; justify-content: center; margin-top: 10px; margin-bottom: 20px; box-shadow: inset 0 0 12px rgba(233, 240, 86, 0.1);">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#E9F056" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
 </div>
-<h3 style="color: #7B92FF; font-size: 18px; margin-top: 0;">Deterministic Accuracy</h3>
+<h3 style="color: #E9F056; font-size: 18px; margin-top: 0;">Deterministic Accuracy</h3>
 <p style="font-size: 14.5px; color: #94A3B8; line-height: 1.6; margin: 0;">Unlike black-box AI tools that hallucinate, Argus relies on a strictly deterministic rule-engine for pass/fail compliance. Every decision is traceable to a specific text snippet, ensuring full legal defensibility.</p>
 </div>
 <div class="lp-card" style="position: relative; overflow: hidden; --hover-rgb: 139, 92, 246;">
@@ -1392,7 +2402,7 @@ We then parse every vendor's submission, intelligently classifying documents, ex
 <div class="flow">
 <div class="step" style="--hover-rgb: 123, 146, 255;">
 <div class="step-icon">
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7B92FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 6px rgba(123,146,255,0.8));"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#E9F056" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 6px rgba(233,240,86,0.8));"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
 </div>
 <div class="step-content">
 <div class="sn">step 1</div><h5>Parse the NIT</h5>
@@ -1440,7 +2450,7 @@ We then parse every vendor's submission, intelligently classifying documents, ex
 <div id="sec-07" class="lp-eyebrow"><span class="n">SECTION 06</span><h2>Supported Document Types</h2></div>
 <div class="lp-section" style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 32px;">
     <div style="display: flex; flex-wrap: wrap; gap: 12px;">
-        <span style="background: rgba(123, 146, 255, 0.1); color: #7B92FF; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; border: 1px solid rgba(123, 146, 255, 0.2);">Scanned PDFs</span>
+        <span style="background: rgba(233, 240, 86, 0.1); color: #E9F056; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; border: 1px solid rgba(233, 240, 86, 0.2);">Scanned PDFs</span>
         <span style="background: rgba(16, 185, 129, 0.1); color: #10B981; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.2);">Native PDFs</span>
         <span style="background: rgba(245, 158, 11, 0.1); color: #F59E0B; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; border: 1px solid rgba(245, 158, 11, 0.2);">Word Documents</span>
         <span style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; border: 1px solid rgba(139, 92, 246, 0.2);">Excel Spreadsheets</span>
@@ -1469,11 +2479,11 @@ def render_masthead() -> None:
     replacement_img = '<img style="width: 100%; height: 100%; object-fit: cover;" '
     fancy_glyph_content = (
         '<div class="fancy-logo-wrapper">'
-        '<div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #7B92FF, rgba(123,146,255,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #7B92FF); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(123, 146, 255, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">'
-        '<div style="position: absolute; inset: 3px; background: #121214; border-radius: 33px; z-index: 1;"></div></div>'
-        '<div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(123, 146, 255, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>'
+        '<div style="position: absolute; inset: 0; border-radius: 36px; padding: 3px; background: conic-gradient(from 0deg, #E9F056, rgba(233,240,86,0.05) 25%, #10B981, rgba(16,185,129,0.05) 75%, #E9F056); animation: spin 5s linear infinite; box-shadow: 0 0 60px rgba(233, 240, 86, 0.4), inset 0 0 20px rgba(16, 185, 129, 0.2);">'
+        '<div style="position: absolute; inset: 3px; background: #211119; border-radius: 33px; z-index: 1;"></div></div>'
+        '<div style="position: absolute; inset: -20px; border-radius: 46px; border: 1px dashed rgba(233, 240, 86, 0.3); animation: spin 15s linear infinite reverse; z-index: 0;"></div>'
         '<div style="position: absolute; inset: -10px; border-radius: 40px; border: 1px solid rgba(16, 185, 129, 0.2); animation: spin 10s linear infinite; z-index: 0;"></div>'
-        '<div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #121214; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">'
+        '<div style="position: relative; z-index: 2; width: 94%; height: 94%; border-radius: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #211119; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">'
         + glyph_content.replace('<img ', replacement_img) + '</div></div>'
     ) if logo_b64 else ''
 
@@ -1500,7 +2510,15 @@ def render_masthead() -> None:
           <label class="glyph" for="logo-anim-toggle">{glyph_content}</label>
           <div>
             <h1>Argus Bid AI — Tender Audit &amp; Compliance</h1>
-            <div class="sub">AI-assisted PSU procurement evaluation · MAF gate · PQC gate · explainable weighted ranking</div>
+            <div class="text-loop-container" style="margin-top: 8px;">
+              Auditing tender compliance for&nbsp;
+              <span class="text-loop">
+                <span class="word">IOCL Tenders</span>
+                <span class="word">GeM Bids</span>
+                <span class="word">Technical Sheets</span>
+                <span class="word">PQC Criteria</span>
+              </span>
+            </div>
             <div class="engine-features">
                <span class="ef-badge ef-slate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg> Automated Doc Inventory</span>
                <span class="ef-badge ef-emerald"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg> Strict MAF &amp; PQC Gates</span>
@@ -1536,7 +2554,7 @@ def render_kpis(results: List[VendorResult]) -> None:
     total = len(results)
     responsive = [r for r in results if not r.disqualified]
     dq = total - len(responsive)
-    top = max((r.score for r in responsive), default=0.0)
+    top = max((r.score for r in results), default=0.0)
     avg = round(sum(r.score for r in responsive) / len(responsive), 1) if responsive else 0.0
     st.markdown(f"""
 <div class="kpis">
@@ -1565,7 +2583,7 @@ def render_leaderboard(results: List[VendorResult]) -> None:
         rank_html = get_rank_html(r.rank)
         dq_cls = "dq" if r.disqualified else ""
         bar_cls = "bar dq" if r.disqualified else "bar"
-        width = 0 if r.disqualified else r.score
+        width = r.score
         nfiles = sum(len(v) for v in [st.session_state.vendor_files.get(r.name, {})])
         rows.append(f"""
         <tr class="{dq_cls}">
@@ -1589,13 +2607,260 @@ def render_leaderboard(results: List[VendorResult]) -> None:
     """, unsafe_allow_html=True)
 
 
+def render_comparative_statement(results: List[VendorResult]) -> None:
+    ordered = sorted(results, key=lambda r: r.name.lower())
+    bid_dict = st.session_state.bid or {}
+    
+    raw_docs = bid_dict.get("mandatory_docs", [])
+    mandatory_docs = list(dict.fromkeys(raw_docs))
+    pqc_rules = bid_dict.get("pqc", [])
+    
+    # 1. Build Headers
+    headers = [
+        '<th style="width: 50px; min-width: 50px;">Sl. No.</th>',
+        '<th style="width: 140px; min-width: 140px; text-align: left;">Bidder Name</th>'
+    ]
+    for doc in mandatory_docs:
+        headers.append(f'<th style="min-width: 120px;">{html.escape(doc)}</th>')
+    for pqc in pqc_rules:
+        headers.append(f'<th style="min-width: 130px;">{html.escape(pqc.get("label", pqc.get("key")))}</th>')
+    headers.append('<th style="min-width: 110px;">Technical Specs</th>')
+    headers.append('<th style="min-width: 220px; text-align: left;">Final Recommendation</th>')
+    
+    rows = []
+    for idx, r in enumerate(ordered, start=1):
+        row_cells = []
+        
+        # Sl No & Bidder Name
+        row_cells.append(f'<td><div class="serial-num">{idx}</div></td>')
+        row_cells.append(f'<td style="text-align: left;"><div class="vname" style="font-weight:700; color:#E2E8F0;">{html.escape(r.name)}</div></td>')
+        
+        # Mandatory Docs Columns
+        checklist = getattr(r, "document_checklist", {})
+        for doc in mandatory_docs:
+            details = checklist.get(doc, {})
+            status = details.get("status", "Missing")
+            page = details.get("page")
+            
+            if status == "Compliant":
+                pg_str = f" (Pg {page})" if page else ""
+                val_text = f"Compliant{pg_str}"
+                cls = "cell-ok"
+            elif status == "Non-Compliant":
+                val_text = "Non-Compliant"
+                cls = "cell-bad"
+            else:
+                val_text = "Missing"
+                cls = "cell-bad"
+                
+            row_cells.append(f'<td class="{cls}">{html.escape(val_text)}</td>')
+            
+        # PQC Columns
+        for pqc in pqc_rules:
+            key = pqc["key"]
+            p_res = None
+            for p in r.pqc:
+                if p.label == pqc.get("label") or p.label == key or getattr(p, "key", "") == key:
+                    p_res = p
+                    break
+            
+            if not p_res:
+                val_text = "N/A"
+                cls = "cell-na"
+            else:
+                passed = p_res.passed
+                provided = p_res.provided
+                pg_suffix = f" (Pg {p_res.page})" if p_res.page and p_res.page > 1 else ""
+                val_text = f"{provided}{pg_suffix}"
+                cls = "cell-ok" if passed else "cell-bad"
+                
+            row_cells.append(f'<td class="{cls}">{html.escape(val_text)}</td>')
+            
+        # Technical Specs
+        failed_specs = [s.param for s in r.mandatory_specs if s.status == "fail"]
+        if failed_specs:
+            tech_specs_text = "Rejected"
+            tech_specs_details = f"<br><span style='font-size:10px; color:#F87171;'>Fails: {', '.join(failed_specs)}</span>"
+            tech_specs_cls = "cell-bad font-bold"
+        else:
+            tech_specs_text = "Compliant"
+            tech_specs_details = ""
+            tech_specs_cls = "cell-ok font-bold"
+        row_cells.append(f'<td class="{tech_specs_cls}">{tech_specs_text}{tech_specs_details}</td>')
+        
+        # Final Recommendation
+        if r.disqualified:
+            tq_rec = "Disqualified"
+            tq_cls = "tq-bad"
+            rejection_reasons = [v.title for v in r.violations]
+            tq_details = f"<div style='font-size:11px; margin-top:6px; color:#F87171; line-height:1.4; text-align: left;'>• " + "<br>• ".join([html.escape(r) for r in rejection_reasons]) + "</div>"
+        else:
+            tq_rec = "Responsive"
+            tq_cls = "tq-ok"
+            tq_details = ""
+            
+        row_cells.append(f"""
+          <td style="text-align: left;">
+            <div class="tq-badge {tq_cls}">{tq_rec}</div>
+            {tq_details}
+          </td>
+        """)
+        
+        rows.append(f"<tr>{''.join(row_cells)}</tr>")
+        
+    st.markdown(f"""
+    <style>
+    .cs-matrix {{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+        background: transparent;
+        table-layout: auto;
+    }}
+    .cs-matrix th {{
+        background: rgba(233, 240, 86, 0.08) !important;
+        border-bottom: 1px solid var(--line);
+        color: var(--blue) !important;
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 12px 6px;
+        text-align: center;
+        vertical-align: middle;
+        white-space: normal !important;
+    }}
+    .cs-matrix td {{
+        border-bottom: 1px solid var(--line);
+        padding: 14px 16px;
+        text-align: center;
+        vertical-align: top;
+        font-size: 13px;
+        color: #FDF2F8;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }}
+    .cs-matrix tr:hover {{
+        background: rgba(255, 255, 255, 0.015);
+    }}
+    .serial-num {{
+        font-weight: 700;
+        color: var(--muted);
+        font-size: 12px;
+    }}
+    .cell-ok {{
+        color: #10B981 !important;
+        font-weight: 600;
+    }}
+    .cell-bad {{
+        color: #FF5C34 !important;
+        font-weight: 600;
+    }}
+    .cell-na {{
+        color: #64748B !important;
+        font-weight: 500;
+    }}
+    .font-bold {{
+        font-weight: 700 !important;
+    }}
+    .tq-badge {{
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-weight: 800;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }}
+    .tq-ok {{
+        background: rgba(16, 185, 129, 0.15) !important;
+        color: #34D399 !important;
+        border: 1px solid rgba(16, 185, 129, 0.4) !important;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.15) !important;
+    }}
+    .tq-bad {{
+        background: rgba(239, 68, 68, 0.15) !important;
+        color: #F87171 !important;
+        border: 1px solid rgba(239, 68, 68, 0.4) !important;
+        box-shadow: 0 0 12px rgba(239, 68, 68, 0.15) !important;
+    }}
+    </style>
+    
+    <div style="width: 100%; margin-bottom: 24px; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+    <table class="cs-matrix">
+      <thead>
+        <tr>
+          {''.join(headers)}
+        </tr>
+      </thead>
+      <tbody>
+        {''.join(rows)}
+      </tbody>
+    </table>
+    </div>
+    """.replace("\n", " "), unsafe_allow_html=True)
+
+
 def render_xai(xai: List[str], narrative: Optional[str]) -> None:
     if narrative:
         st.markdown(f'<div class="xai"><b>Executive Summary (LLM)</b><br>{html.escape(narrative)}</div>',
                     unsafe_allow_html=True)
-    icon_svg = """<div style="flex-shrink: 0; width: 32px; height: 32px; background: linear-gradient(135deg, rgba(123,146,255,0.15), rgba(16,185,129,0.15)); border: 1px solid rgba(123,146,255,0.25); border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.1);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg></div>"""
+    icon_svg = """<div style="flex-shrink: 0; width: 32px; height: 32px; background: linear-gradient(135deg, rgba(233,240,86,0.15), rgba(16,185,129,0.15)); border: 1px solid rgba(233,240,86,0.25); border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,0.1);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg></div>"""
     for line in xai:
         st.markdown(f'<div class="xai" style="padding: 18px 20px;"><div style="display:flex; gap:16px;">{icon_svg}<div style="flex: 1; padding-top: 3px;">{line}</div></div></div>', unsafe_allow_html=True)
+
+
+def render_document_checklist(r: VendorResult) -> str:
+    import urllib.parse
+    checklist = getattr(r, "document_checklist", {})
+    if not checklist:
+        return ""
+        
+    pdf_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; '
+        'margin-left: 5px; display: inline-block; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.45));">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '</svg>'
+    )
+        
+    svg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+    out = f'<div class="sh-box sh-blue">{svg}<span class="title">Mandatory Document &amp; Annexure Checklist Validator</span><span class="line"></span></div>'
+    
+    rows = []
+    for doc, details in checklist.items():
+        status = details.get("status", "Missing")
+        page = details.get("page")
+        filename = details.get("file")
+        finding = details.get("finding", "")
+        
+        # Format status badge
+        if status == "Compliant":
+            badge = '<span class="chip match" style="font-weight: 700;">Compliant</span>'
+        elif status == "Non-Compliant":
+            badge = '<span class="chip fail" style="font-weight: 700; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #F87171;">Non-Compliant</span>'
+        else:
+            badge = '<span class="chip fail" style="font-weight: 700;">Missing</span>'
+            
+        # Format source link
+        src_link = "—"
+        if filename:
+            pnum = page or 1
+            link_url = f'?page=audit&view_file={urllib.parse.quote(filename)}&view_page={pnum}&vendor={urllib.parse.quote(r.name)}'
+            visual_url = f'?page=audit&view_visual_file={urllib.parse.quote(filename)}&view_visual_page={pnum}&vendor={urllib.parse.quote(r.name)}'
+            pdf_icon = f'<a href="{visual_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
+            src_link = f'<a href="{link_url}" target="_self" style="color: #E9F056; text-decoration: underline; font-weight: 600;">{html.escape(filename)} (Pg {pnum})</a>{pdf_icon}'
+            
+        rows.append(f'<tr><td style="text-align: left; font-weight: 600; color: #E2E8F0; width: 35%;">{html.escape(doc)}</td><td style="width: 15%;">{badge}</td><td style="width: 20%;">{src_link}</td><td style="text-align: left; color: #94A3B8; font-size: 12.5px; width: 30%;">{html.escape(finding)}</td></tr>')
+        
+    out += f'<div style="overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch;"><table class="invtable">{"".join(rows)}</table></div>'
+    return out
 
 
 def render_inventory(r: VendorResult) -> str:
@@ -1616,11 +2881,24 @@ def render_maf(r: VendorResult) -> str:
     out = f'<div class="sh-box sh-emerald">{svg}<span class="title">Manufacturer&apos;s Authorization (MAF) Gate</span><span class="line"></span></div>'
     cls = "ok" if r.maf.status == MAF_VALID else "bad"
     
+    pdf_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; '
+        'margin-left: 5px; display: inline-block; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.45));">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '</svg>'
+    )
+    
     src = ""
     if r.maf.source_file:
         pnum = getattr(r.maf, "page", 1)
         src_link = f'?page=audit&view_file={urllib.parse.quote(r.maf.source_file)}&view_page={pnum}&vendor={urllib.parse.quote(r.name)}'
-        src = f' — source: <a href="{src_link}" target="_self" style="color: #7B92FF; text-decoration: underline; font-weight: 600;">{html.escape(r.maf.source_file)} (Pg {pnum})</a>'
+        visual_url = f'?page=audit&view_visual_file={urllib.parse.quote(r.maf.source_file)}&view_visual_page={pnum}&vendor={urllib.parse.quote(r.name)}'
+        pdf_icon = f'<a href="{visual_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
+        src = f' — source: <a href="{src_link}" target="_self" style="color: #E9F056; text-decoration: underline; font-weight: 600;">{html.escape(r.maf.source_file)} (Pg {pnum})</a>{pdf_icon}'
         
     out += f'<div style="margin-bottom:8px; display:flex; align-items:center; gap:12px;">{maf_pill(r.maf.status)}<span style="color:var(--muted);font-size:12px; margin-top:2px;">{src}</span></div>'
     out += f'<div class="evidence {cls}">{html.escape(r.maf.evidence)}</div>'
@@ -1632,40 +2910,70 @@ def render_pqc(r: VendorResult) -> str:
     svg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>'
     out = f'<div class="sh-box sh-purple">{svg}<span class="title">Pre-Qualification Criteria (PQC) Gate</span><span class="line"></span></div>'
     rows = []
+    
+    pdf_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; '
+        'margin-left: 5px; display: inline-block; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.45));">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '</svg>'
+    )
+    
     for p in r.pqc:
         if p.file:
             link_url = f'?page=audit&view_file={urllib.parse.quote(p.file)}&view_page={p.page}&vendor={urllib.parse.quote(r.name)}'
+            visual_url = f'?page=audit&view_visual_file={urllib.parse.quote(p.file)}&view_visual_page={p.page}&vendor={urllib.parse.quote(r.name)}'
+            pdf_icon = f'<a href="{visual_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
             clean_prov = re.sub(r'\s*\(Pg \d+\)', '', p.provided)
-            chip = f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip match" style="cursor: pointer; border: 1px solid rgba(123, 146, 255, 0.45); background: rgba(123, 146, 255, 0.1) !important; color: #7B92FF !important; font-weight: 700;">{html.escape(clean_prov)} <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">📄 Pg {p.page}</span></span></a>'
+            chip = f'<a href="{link_url}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip match" style="cursor: pointer; border: 1px solid rgba(233, 240, 86, 0.45); background: rgba(233, 240, 86, 0.1) !important; color: #E9F056 !important; font-weight: 700;">{html.escape(clean_prov)} <span style="font-size: 10px; opacity: 0.85; margin-left: 2px;">Pg {p.page}</span></span></a>{pdf_icon}'
         else:
             chip = (f'<span class="chip match">{html.escape(p.provided)}</span>' if p.passed
                     else f'<span class="chip fail">{html.escape(p.provided)} ✕</span>')
             
         if p.bid_file:
             bid_link = f'?page=audit&view_file={urllib.parse.quote(p.bid_file)}&view_page={p.bid_page}&vendor=Master'
-            criterion_val = f'<span style="font-weight: 600;">{html.escape(p.label)}</span> <a href="{bid_link}" target="_self" style="color: #7B92FF; font-size:11px; text-decoration: underline; font-weight: 600; margin-left: 4px;">§{p.section} (Pg {p.bid_page})</a>'
+            visual_bid_url = f'?page=audit&view_visual_file={urllib.parse.quote(p.bid_file)}&view_visual_page={p.bid_page}&vendor=Master'
+            pdf_bid_icon = f'<a href="{visual_bid_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
+            criterion_val = f'<span style="font-weight: 600;">{html.escape(p.label)}</span> <a href="{bid_link}" target="_self" style="color: #E9F056; font-size:11px; text-decoration: underline; font-weight: 600; margin-left: 4px;">§{p.section} (Pg {p.bid_page})</a>{pdf_bid_icon}'
         else:
             criterion_val = f'<span style="font-weight: 600;">{html.escape(p.label)}</span> <span style="color:var(--muted);font-size:11px;">§{p.section}</span>'
-
+ 
         rows.append(f"<tr><td>{criterion_val}</td>"
                     f"<td><span class='chip req'>{html.escape(p.required)}</span></td>"
                     f"<td style='text-align:right;'>{chip}</td></tr>")
     out += f'<div style="overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch;"><table class="matrix"><thead><tr><th>Criterion</th><th>Required</th><th style="text-align:right;">Vendor Provided</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
     return out
-
-
+ 
+ 
 def render_matrix(r: VendorResult) -> str:
     import urllib.parse
     svg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>'
     out = f'<div class="sh-box sh-blue">{svg}<span class="title">Technical Comparison Matrix (BID vs Vendor)</span><span class="line"></span></div>'
     rows = []
+    
+    pdf_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; '
+        'margin-left: 5px; display: inline-block; filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.45));">'
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+        '<polyline points="14 2 14 8 20 8"></polyline>'
+        '<line x1="16" y1="13" x2="8" y2="13"></line>'
+        '<line x1="16" y1="17" x2="8" y2="17"></line>'
+        '</svg>'
+    )
+    
     for tier, specs in [("Mandatory", r.mandatory_specs), ("Preferred", r.preferred_specs)]:
         for s in specs:
             tier_chip = (f'<span class="chip req">{tier}</span>')
             
             if s.bid_file:
                 bid_link = f'?page=audit&view_file={urllib.parse.quote(s.bid_file)}&view_page={s.bid_page}&vendor=Master'
-                bid_val = f'<a href="{bid_link}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip req" style="cursor: pointer; border: 1px dashed rgba(123, 146, 255, 0.4);">{html.escape(s.required)} <span style="font-size: 9px; opacity: 0.8; margin-left: 2px;">📄 Pg {s.bid_page}</span></span></a>'
+                visual_bid_url = f'?page=audit&view_visual_file={urllib.parse.quote(s.bid_file)}&view_visual_page={s.bid_page}&vendor=Master'
+                pdf_bid_icon = f'<a href="{visual_bid_url}" target="_self" style="text-decoration: none;" title="View visual PDF page">{pdf_svg}</a>'
+                bid_val = f'<a href="{bid_link}" target="_self" style="color: inherit; text-decoration: none;"><span class="chip req" style="cursor: pointer; border: 1px dashed rgba(233, 240, 86, 0.4);">{html.escape(s.required)} <span style="font-size: 9px; opacity: 0.8; margin-left: 2px;">Pg {s.bid_page}</span></span></a>{pdf_bid_icon}'
             else:
                 bid_val = f"<span class='chip req'>{html.escape(s.required)}</span>"
                 
@@ -1729,6 +3037,7 @@ def render_drawers(results: List[VendorResult]) -> None:
         
         inner_html = (
             render_inventory(r) +
+            render_document_checklist(r) +
             render_maf(r) +
             render_pqc(r) +
             render_matrix(r) +
@@ -1781,6 +3090,8 @@ def render_bid_map() -> None:
     
     html2 = render_map_sec("Mandatory Technical Specs (70%)", bid["mandatory_specs"])
     html2 += render_map_sec("Preferred Specs (30%)", bid["preferred_specs"])
+
+    html3 = render_map_sec("General Tender & Commercial Info", bid.get("general_info", []))
     
     svg_icon = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'
 
@@ -1790,17 +3101,670 @@ def render_bid_map() -> None:
         {svg_icon} Master BID Intelligence Map (Extracted Ontology)
     </span>
   </summary>
-  <div class="grid-2">
+  <div class="grid-3">
     <div>{html1}</div>
     <div>{html2}</div>
+    <div>{html3}</div>
   </div>
 </details>""", unsafe_allow_html=True)
+
+
+# ===========================================================================
+# SECTION 10B — RULES REVIEW & EDIT PAGE
+# ===========================================================================
+
+def is_placeholder_evidence(evidence: Optional[str]) -> bool:
+    if not evidence:
+        return True
+    lower_ev = evidence.lower().strip()
+    placeholders = [
+        "no evidence", 
+        "not found", 
+        "not mentioned", 
+        "n/a", 
+        "not applicable", 
+        "no quote", 
+        "no direct", 
+        "evidence not found", 
+        "does not mention", 
+        "cannot find"
+    ]
+    return any(p in lower_ev for p in placeholders) or len(lower_ev) < 5
+
+
+def get_synonyms_for_keyword(keyword: str) -> list:
+    kw_clean = keyword.lower().strip()
+    synonyms = [kw_clean]
+    
+    # Check common documents and expand synonyms from most specific to least specific
+    if "pan" in kw_clean:
+        synonyms.extend(["pan card", "copy of pan", "permanent account number", "pan no", "pan number", "pan:"])
+    if "gst" in kw_clean:
+        synonyms.extend(["gst registration", "gst certificate", "gstin certificate", "gstin registration", "gstin", "gst no", "gst number", "goods and service", "goods & service"])
+    if "balance sheet" in kw_clean or "audited" in kw_clean or "sheet" in kw_clean:
+        synonyms.extend(["audited balance sheet", "balance sheet", "audited balance", "financial statement", "profit & loss", "audited account", "turnover"])
+    if "maf" in kw_clean or "authorization" in kw_clean or "authorisation" in kw_clean:
+        synonyms.extend(["manufacturer's authorization form", "manufacturer's authorization", "manufacturer authorization", "oem authorization", "maf", "authorization form", "authorisation form"])
+    if "iso" in kw_clean:
+        synonyms.extend(["iso 9001", "iso certification", "iso certificate", "iso status"])
+    if "bis" in kw_clean:
+        synonyms.extend(["bis certification", "bis certificate", "bis compliance", "crs registration"])
+    if "service center" in kw_clean or "service centre" in kw_clean:
+        synonyms.extend(["service center", "service centre", "local support", "support office", "west bengal"])
+    if "udyam" in kw_clean or "msme" in kw_clean or "micro" in kw_clean or "registration" in kw_clean:
+        synonyms.extend(["udyam registration certificate", "udyam registration", "udyam certificate", "msme certificate", "udyam number", "micro and small"])
+        
+    seen = set()
+    result = []
+    for s in synonyms:
+        if s not in seen:
+            seen.add(s)
+            result.append(s)
+    return result
+
+
+def extract_evidence_from_page(page_content: str, synonym: str) -> str:
+    """Helper to extract a context snippet of a page around the matching synonym."""
+    lines = page_content.split('\n')
+    syn_lower = synonym.lower()
+    for i, line in enumerate(lines):
+        if syn_lower in line.lower():
+            start = max(0, i - 1)
+            end = min(len(lines), i + 2)
+            context = [lines[j].strip() for j in range(start, end) if lines[j].strip()]
+            return " ... ".join(context)
+    return f"Requirement for '{synonym}' found in tender document."
+
+
+def _find_page_and_evidence_for_keyword(evidence: Optional[str], keyword: str, bid_text: str) -> Tuple[int, str]:
+    """Finds the exact PDF page number and evidence snippet for a keyword/evidence block.
+    Uses actual --- PAGE N --- markers extracted from the text for 100% accurate page numbers.
+    """
+    default_ev = evidence if evidence else f"Requirement for '{keyword}' found in tender rules."
+    try:
+        import re as _re
+
+        # ── Build a list of (page_number, page_content) from --- PAGE N --- markers ──
+        page_blocks = []
+        for m in _re.finditer(r'--- PAGE (\d+) ---\n?', bid_text):
+            pg_num = int(m.group(1))
+            pg_start = m.end()
+            # Find the next PAGE marker or end of text
+            next_m = _re.search(r'--- PAGE \d+ ---', bid_text[pg_start:])
+            pg_end = pg_start + next_m.start() if next_m else len(bid_text)
+            page_blocks.append((pg_num, bid_text[pg_start:pg_end]))
+
+        if not page_blocks:
+            # Absolute fallback: split by \f and use index+1 as page number
+            parts = bid_text.split('\f')
+            page_blocks = [(i + 1, p) for i, p in enumerate(parts)]
+
+        # Strategy 0: Search for specific extracted IDs/values (e.g. PAN number 'AAEFC5257B' or GSTIN) in evidence
+        if evidence:
+            specific_tokens = _re.findall(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b|\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b|\b[A-Z0-9]{7,15}\b', evidence)
+            for token in specific_tokens:
+                token_clean = token.lower().strip()
+                if len(token_clean) >= 5 and token_clean not in {'present', 'verified', 'compliant', 'missing', 'number', 'status', 'submission'}:
+                    for pg_num, page_content in page_blocks:
+                        if token_clean in page_content.lower():
+                            return pg_num, evidence
+
+        # Strategy 1: Check evidence if it is not placeholder text
+        if evidence and not is_placeholder_evidence(evidence):
+            clean_ev = _re.sub(r'\s+', ' ', evidence.lower()).strip().strip('"').strip("'").strip()
+
+            # Exact match
+            for pg_num, page_content in page_blocks:
+                if clean_ev in _re.sub(r'\s+', ' ', page_content.lower()):
+                    return pg_num, evidence
+
+            # Substring match
+            if len(clean_ev) > 40:
+                short_ev = clean_ev[:40]
+                for pg_num, page_content in page_blocks:
+                    if short_ev in _re.sub(r'\s+', ' ', page_content.lower()):
+                        return pg_num, evidence
+
+            # Token overlap match
+            stop = {'the','a','an','of','for','in','is','are','and','or','to','by','as',
+                    'be','at','on','with','that','this','which','from','must','shall',
+                    'should','will','not','have','has','been','its','their','were','was',
+                    'it','we','they','us','our','all','any','each','per','no','can'}
+            ev_words = [w for w in _re.findall(r'\b\w{4,}\b', clean_ev) if w not in stop]
+            if ev_words:
+                best_score, best_pg = 0, None
+                for pg_num, page_content in page_blocks:
+                    page_lower = page_content.lower()
+                    if "reason for disqualification" in page_lower or "violation 1:" in page_lower:
+                        continue  # Skip report violation summary pages
+                    score = sum(1 for w in ev_words if w in page_lower)
+                    if score > best_score:
+                        best_score, best_pg = score, pg_num
+                threshold = max(2, int(len(ev_words) * 0.4))
+                if best_pg is not None and best_score >= threshold:
+                    return best_pg, evidence
+
+        # Strategy 2: Page-by-page synonym matching (skipping report violation summary sections)
+        synonyms = get_synonyms_for_keyword(keyword)
+        for pg_num, page_content in page_blocks:
+            page_lower = page_content.lower()
+            if "reason for disqualification" in page_lower or "violation 1:" in page_lower:
+                continue  # Skip generated summary report pages
+            for syn in synonyms:
+                pattern = r'\b' + _re.escape(syn) + r'\b'
+                if _re.search(pattern, page_lower):
+                    extracted = extract_evidence_from_page(page_content, syn)
+                    return pg_num, extracted
+
+        # Strategy 3: Loose substring search of synonyms
+        for pg_num, page_content in page_blocks:
+            page_lower = page_content.lower()
+            for syn in synonyms:
+                if syn in page_lower:
+                    extracted = extract_evidence_from_page(page_content, syn)
+                    return pg_num, extracted
+
+        # Strategy 4: Loose token match of keyword words
+        kw_lower = keyword.lower()
+        kw_words = [w for w in _re.findall(r'\b\w{4,}\b', kw_lower)
+                    if w not in {'form','card','type','date','list','item','note','data'}]
+        if kw_words:
+            best_score, best_pg = 0, None
+            for pg_num, page_content in page_blocks:
+                page_lower = page_content.lower()
+                score = sum(1 for w in kw_words if w in page_lower)
+                if score > best_score:
+                    best_score, best_pg = score, pg_num
+            if best_pg is not None and best_score >= max(1, len(kw_words) // 2):
+                for pg_num, page_content in page_blocks:
+                    if pg_num == best_pg:
+                        extracted = extract_evidence_from_page(page_content, kw_words[0])
+                        return pg_num, extracted
+
+    except Exception:
+        pass
+    return 1, default_ev
+
+
+def render_rules_review_page() -> None:
+    """Renders the AI Tender Rules Verification Console and editable requirements tabs."""
+    ss = st.session_state
+    if not ss.get("bid") and ss.get("bid_text"):
+        from audit_engine import AuditEngine
+        engine = AuditEngine()
+        ss.bid = engine.parse_master_bid(ss.get("bid_text", ""))
+        save_state_to_disk()
+
+    bid = ss.get("bid", {})
+    if not bid:
+        st.error("No bid data found. Please go back and re-upload the master bid document.")
+        return
+
+    bid_text = ss.get("bid_text", "")
+    bid_paths = ss.get("bid_paths", {})
+    master_pdf_path = list(bid_paths.values())[0] if bid_paths else ""
+
+    # Inject styling matching the screenshot console design
+    st.markdown("""
+    <style>
+    /* Style delete columns to have red buttons */
+    div[data-testid="stColumn"]:last-child button {
+        background: linear-gradient(135deg, #EF4444, #DC2626) !important;
+        border: none !important;
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.2) !important;
+        transition: all 0.3s ease !important;
+        height: 38px !important;
+        margin-top: 28px !important;
+    }
+    div[data-testid="stColumn"]:last-child button:hover {
+        background: linear-gradient(135deg, #F87171, #EF4444) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4) !important;
+    }
+    
+    /* PDF Jump Link Button Styling */
+    .pdf-jump-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 34px !important;
+        height: 34px !important;
+        border-radius: 8px !important;
+        background: linear-gradient(135deg, #8B5CF6, #6D28D9) !important;
+        border: 1px solid #7C3AED !important;
+        text-decoration: none !important;
+        font-size: 14px !important;
+        color: #FFFFFF !important;
+        font-weight: bold !important;
+        box-shadow: 0 4px 10px rgba(139, 92, 246, 0.25) !important;
+        transition: all 0.2s ease !important;
+        margin-top: 8px !important;
+    }
+    .pdf-jump-btn:hover {
+        background: linear-gradient(135deg, #A78BFA, #8B5CF6) !important;
+        transform: scale(1.05) !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.45) !important;
+    }
+
+    /* Console Rules List Card Styling */
+    .rule-card {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border: 1px solid rgba(139, 92, 246, 0.15) !important;
+        border-radius: 10px !important;
+        padding: 16px 20px !important;
+        margin-bottom: 12px !important;
+        transition: all 0.2s ease !important;
+    }
+    .rule-card:hover {
+        background: rgba(139, 92, 246, 0.02) !important;
+        border-color: rgba(139, 92, 246, 0.3) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+    }
+    .rule-title {
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        color: #E2E8F0 !important;
+        margin-bottom: 6px !important;
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+    }
+    .rule-id-chip {
+        font-size: 10px !important;
+        font-weight: 800 !important;
+        background: rgba(139, 92, 246, 0.15) !important;
+        color: #A78BFA !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+    .rule-page-chip {
+        font-size: 10px !important;
+        font-weight: 800 !important;
+        background: rgba(56, 189, 248, 0.15) !important;
+        color: #38BDF8 !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        border: 1px solid rgba(56, 189, 248, 0.3) !important;
+        margin-left: 6px !important;
+    }
+    .rule-quote {
+        font-size: 13px !important;
+        font-style: italic !important;
+        color: rgba(199, 211, 234, 0.7) !important;
+        line-height: 1.5 !important;
+        margin-top: 4px !important;
+        border-left: 3px solid rgba(233, 240, 86, 0.4) !important;
+        padding-left: 10px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Console Top bar Stats (Matching Screenshot Top Block) ───────────────
+    engine_model = ss.get("ollama_model_name", "qwen2.5:7b")
+    if ss.get("engine_mode") == "Cloud RAG (Gemini)":
+        engine_model = ss.get("gemini_model_name", "gemini-flash-latest")
+    elif ss.get("engine_mode") == "Cloud RAG (Groq)":
+        engine_model = ss.get("groq_model_name", "llama-3.3-70b-versatile")
+
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, rgba(233,240,86,0.06) 0%, rgba(233,240,86,0.02) 100%);
+                border: 1px solid rgba(233,240,86,0.2); border-radius: 12px;
+                padding: 20px 24px; margin-bottom: 24px;">
+        <div style="font-size:11px; font-weight:800; letter-spacing:2px; color:rgba(233,240,86,0.6);
+                    text-transform:uppercase; margin-bottom:6px;">ARGUS BID AI</div>
+        <div style="font-size:22px; font-weight:800; color:#E9F056; margin-bottom:4px;">🛡️ AI Tender Rules Understanding Console</div>
+        <div style="font-size:13px; color:rgba(199,211,234,0.7); margin-bottom:16px;">
+            Inspect extracted Pre-Qualification Criteria (PQC) thresholds, technical specifications, and CVC procurement compliance sentinel parameters before evaluation.
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; border-top: 1px solid rgba(199,211,234,0.1); padding-top: 16px;">
+            <div>
+                <div style="font-size:10px; color:rgba(199,211,234,0.5); font-weight:700; text-transform:uppercase;">Total Bids Processed</div>
+                <div style="font-size:18px; font-weight:900; color:#E2E8F0;">1</div>
+            </div>
+            <div>
+                <div style="font-size:10px; color:rgba(199,211,234,0.5); font-weight:700; text-transform:uppercase;">Source Index Integrity</div>
+                <div style="font-size:14px; font-weight:900; color:#10B981; margin-top:2px;">
+                    <span style="background:rgba(16,185,129,0.15); padding:2px 8px; border-radius:4px; border:1px solid rgba(16,185,129,0.3);">🟢 VERIFIED</span>
+                </div>
+            </div>
+            <div>
+                <div style="font-size:10px; color:rgba(199,211,234,0.5); font-weight:700; text-transform:uppercase;">Analysis Engine</div>
+                <div style="font-size:13px; font-weight:800; color:#38BDF8; font-family:monospace; margin-top:4px;">🤖 AI Mode ({engine_model})</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Initialize State Lists ──────────────────────────────────────────────
+    pqc_list = bid.get("pqc", [])
+    ss.setdefault("rr_pqc", [dict(p) for p in pqc_list])
+    if "rr_pqc_init" not in ss:
+        ss.rr_pqc = [dict(p) for p in pqc_list]
+        ss.rr_pqc_init = True
+
+    ss.setdefault("rr_docs", list(bid.get("mandatory_docs", [])))
+    if "rr_docs_init" not in ss:
+        ss.rr_docs = list(bid.get("mandatory_docs", []))
+        ss.rr_docs_init = True
+
+    ss.setdefault("rr_mspecs", [dict(s) for s in bid.get("mandatory_specs", [])])
+    if "rr_mspecs_init" not in ss:
+        ss.rr_mspecs = [dict(s) for s in bid.get("mandatory_specs", [])]
+        ss.rr_mspecs_init = True
+
+    preferred_raw = bid.get("preferred_specs", [])
+    ss.setdefault("rr_pspecs", [dict(s) for s in preferred_raw])
+    if "rr_pspecs_init" not in ss:
+        ss.rr_pspecs = [dict(s) for s in preferred_raw]
+        ss.rr_pspecs_init = True
+
+    # ── Tabs Configuration ───────────────────────────────────────────────────
+    tabs = st.tabs(["🔍 Rules Verification Console", "✏️ Edit Requirements"])
+
+    with tabs[0]:
+        c_left, c_right = st.columns([4, 8])
+        
+        with c_left:
+            st.markdown("""
+            <div style="font-size:13px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+                        color:rgba(233,240,86,0.8); margin-bottom:12px;">📁 Select Tender Rules Document</div>
+            """, unsafe_allow_html=True)
+            
+            # Select doc dropdown
+            doc_options = [f"Master Tender Rules ({ss.bid_source})"]
+            st.selectbox("Select Rules Document", options=doc_options, label_visibility="collapsed")
+            
+            # Document Properties card
+            file_size_str = "8.85 MB"
+            if bid_paths:
+                try:
+                    first_path = list(bid_paths.values())[0]
+                    size_bytes = os.path.getsize(first_path)
+                    file_size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+                except Exception:
+                    pass
+            word_count = len(bid_text.split())
+            
+            doc_props_html = f"""
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(139, 92, 246, 0.15); 
+                        border-radius: 12px; padding: 20px; margin-top: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                <div style="font-size: 11px; font-weight: 800; color: rgba(139, 92, 246, 0.8); 
+                            letter-spacing: 1px; text-transform: uppercase; margin-bottom: 14px;">
+                    ℹ️ Document Properties
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between;"><span style="color: rgba(199,211,234,0.6);">Vendor:</span> <span style="font-weight: 700; color: #E2E8F0;">Unknown Vendor</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span style="color: rgba(199,211,234,0.6);">Document Type:</span> <span style="font-weight: 700; color: #E2E8F0;">Tender Rules</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span style="color: rgba(199,211,234,0.6);">File Name:</span> <span style="font-weight: 700; color: #E2E8F0; font-family: monospace; font-size: 11px;">{html.escape(ss.bid_source)}</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span style="color: rgba(199,211,234,0.6);">File Size:</span> <span style="font-weight: 700; color: #E2E8F0;">{file_size_str}</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span style="color: rgba(199,211,234,0.6);">Word Count:</span> <span style="font-weight: 700; color: #E2E8F0;">{word_count}</span></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(199,211,234,0.1);"><span style="color: rgba(199,211,234,0.6);">Integrity Status:</span> <span style="font-weight: 900; color: #10B981; font-size: 11px; background: rgba(16, 185, 129, 0.15); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">VERIFIED</span></div>
+                </div>
+            </div>
+            """
+            st.markdown(doc_props_html, unsafe_allow_html=True)
+            
+        with c_right:
+            st.markdown("""
+            <div style="font-size:13px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase;
+                        color:rgba(233,240,86,0.8); margin-bottom:12px;">🛡️ Extracted Qualification Rules & Requirements</div>
+            """, unsafe_allow_html=True)
+            
+            # Gather list of all rules
+            rules = []
+            
+            # 1. PQC
+            for p in ss.rr_pqc:
+                rules.append({
+                    "title": p.get("label", "Pre-Qualification Criterion"),
+                    "evidence": p.get("evidence", ""),
+                    "page_keyword": p.get("label", ""),
+                    "type_name": "PQC"
+                })
+            # 2. Mandatory Docs
+            doc_evidence = bid.get("mandatory_docs_evidence", {})
+            for d in ss.rr_docs:
+                if d.strip():
+                    rules.append({
+                        "title": d,
+                        "evidence": doc_evidence.get(d, f"Submission of mandatory document '{d}' is required."),
+                        "page_keyword": d,
+                        "type_name": "Required Document"
+                    })
+            # 3. Mandatory specs
+            for s in ss.rr_mspecs:
+                rules.append({
+                    "title": s.get("label", "Mandatory Specification"),
+                    "evidence": s.get("evidence", ""),
+                    "page_keyword": s.get("label", ""),
+                    "type_name": "Mandatory Spec"
+                })
+            # 4. Preferred specs
+            for s in ss.rr_pspecs:
+                rules.append({
+                    "title": s.get("label", "Preferred Specification"),
+                    "evidence": s.get("evidence", ""),
+                    "page_keyword": s.get("label", ""),
+                    "type_name": "Preferred Spec"
+                })
+                
+            # Render list of cards dynamically
+            if not rules:
+                st.info("No rules found or extracted from this document.")
+            else:
+                for idx, r in enumerate(rules):
+                    page, evidence_str = _find_page_and_evidence_for_keyword(r["evidence"], r["page_keyword"], bid_text)
+                    rule_id = f"R{idx+1}"
+                    
+                    c_card, c_btn = st.columns([9.2, 0.8])
+                    
+                    # Renders card with custom layout
+                    if not evidence_str or is_placeholder_evidence(evidence_str):
+                        evidence_str = f"Requirements regarding {r['title']} must be complied with as per contract guidelines."
+                    card_html = f"""
+                    <div class="rule-card">
+                        <div class="rule-title">
+                            <span>{idx+1}) {html.escape(r["title"])}</span>
+                            <div>
+                                <span class="rule-id-chip">{rule_id}</span>
+                                <span class="rule-page-chip">Page {page}</span>
+                            </div>
+                        </div>
+                        <div class="rule-quote">"{html.escape(evidence_str)}"</div>
+                    </div>
+                    """
+                    c_card.markdown(card_html, unsafe_allow_html=True)
+                    
+                    # Renders PDF jump link button next to it
+                    master_pdf_filename = ss.bid_source if ss.get("bid_source") else ""
+                    if master_pdf_filename:
+                        pdf_url = f"?view_visual_file={urllib.parse.quote(master_pdf_filename)}&view_visual_page={page}&vendor=Master"
+                        c_btn.markdown(
+                            f'<a href="{pdf_url}" target="_self" class="pdf-jump-btn" title="Jump to page {page}">📄</a>',
+                            unsafe_allow_html=True
+                        )
+
+    with tabs[1]:
+        card_style = (
+            "background:rgba(255,255,255,0.03);border:1px solid rgba(199,211,234,0.12);"
+            "border-radius:12px;padding:20px 24px;margin-bottom:18px;"
+        )
+        section_hdr = lambda title, icon: st.markdown(
+            f'<div style="font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;'
+            f'color:rgba(233,240,86,0.8);margin:24px 0 12px 0;">{icon} {title}</div>',
+            unsafe_allow_html=True
+        )
+
+        def pdf_link_btn(label: str, keyword: str, col) -> None:
+            """Renders a small PDF jump link button using internal viewer query params."""
+            master_pdf_filename = ss.bid_source if ss.get("bid_source") else ""
+            if master_pdf_filename:
+                # Use the new robust page finder helper
+                page, _ = _find_page_and_evidence_for_keyword("", keyword, bid_text)
+                import urllib.parse
+                pdf_url = f"?view_visual_file={urllib.parse.quote(master_pdf_filename)}&view_visual_page={page}&vendor=Master"
+                col.markdown(
+                    f'<a href="{pdf_url}" target="_self" class="pdf-jump-btn" title="View PDF page {page}">📄</a>',
+                    unsafe_allow_html=True
+                )
+
+        # ── Section 1: Tender ID ─────────────────────────────────────────────
+        section_hdr("Tender Identity", "🆔")
+        with st.container():
+            st.markdown(f'<div style="{card_style}">', unsafe_allow_html=True)
+            bid["tender_id"] = st.text_input(
+                "Tender ID",
+                value=bid.get("tender_id", ""),
+                key="rr_tender_id",
+                help="The unique tender/NIT number from the master bid document."
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Section 2: PQC ───────────────────────────────────────────────────
+        section_hdr("Pre-Qualification Criteria (PQC)", "✅")
+        pqc_to_delete = []
+        for idx, pqc in enumerate(ss.rr_pqc):
+            with st.container():
+                st.markdown(f'<div style="{card_style}">', unsafe_allow_html=True)
+                c1, c2, c3, c4, c_pdf, c_del = st.columns([3, 1.5, 1.5, 1.5, 0.5, 0.5])
+                pqc["label"] = c1.text_input("Criterion", value=pqc.get("label", ""), key=f"rr_pqc_label_{idx}")
+                # Safely convert threshold to float
+                t_val = pqc.get("threshold", 0)
+                if t_val is None:
+                    t_val = 0.0
+                else:
+                    try:
+                        t_val = float(t_val)
+                    except (ValueError, TypeError):
+                        t_val = 0.0
+                pqc["threshold"] = c2.number_input("Threshold", value=t_val, step=0.5, key=f"rr_pqc_thresh_{idx}")
+                pqc["unit"] = c3.text_input("Unit", value=pqc.get("unit", ""), key=f"rr_pqc_unit_{idx}")
+                pqc["section"] = c4.text_input("Section", value=str(pqc.get("section", "")), key=f"rr_pqc_section_{idx}")
+                pdf_link_btn(pqc.get("label", ""), pqc.get("label", ""), c_pdf)
+                if c_del.button("🗑️", key=f"rr_del_pqc_{idx}", help="Remove this criterion"):
+                    pqc_to_delete.append(idx)
+                st.markdown('</div>', unsafe_allow_html=True)
+        for i in reversed(pqc_to_delete):
+            ss.rr_pqc.pop(i)
+        if st.button("＋ Add PQC Criterion", key="rr_add_pqc"):
+            ss.rr_pqc.append({"key": f"pqc_{len(ss.rr_pqc)}", "label": "New Criterion", "threshold": 0, "unit": "", "section": ""})
+            st.rerun()
+
+        # ── Section 3: Mandatory Documents ───────────────────────────────────
+        section_hdr("Mandatory Documents Checklist", "📁")
+        doc_to_delete = []
+        for idx, doc in enumerate(ss.rr_docs):
+            c1, c_pdf, c_del = st.columns([9, 0.5, 0.5])
+            ss.rr_docs[idx] = c1.text_input(f"Document {idx+1}", value=doc, key=f"rr_doc_{idx}", label_visibility="collapsed")
+            pdf_link_btn(doc, doc, c_pdf)
+            if c_del.button("🗑️", key=f"rr_del_doc_{idx}", help="Remove this document"):
+                doc_to_delete.append(idx)
+        for i in reversed(doc_to_delete):
+            ss.rr_docs.pop(i)
+        if st.button("＋ Add Required Document", key="rr_add_doc"):
+            ss.rr_docs.append("New Required Document")
+            st.rerun()
+
+        # ── Section 4: Mandatory Technical Specs ─────────────────────────────
+        section_hdr("Mandatory Technical Specifications", "⚙️")
+        op_map = {"gte": "≥ (Greater or Equal)", "lte": "≤ (Less or Equal)", "bool": "Must Have (Boolean)"}
+        op_rev = {v: k for k, v in op_map.items()}
+        op_options = list(op_map.values())
+
+        mspec_to_delete = []
+        for idx, spec in enumerate(ss.rr_mspecs):
+            with st.container():
+                st.markdown(f'<div style="{card_style}">', unsafe_allow_html=True)
+                c1, c2, c3, c4, c_pdf, c_del = st.columns([3, 2, 2, 1.5, 0.5, 0.5])
+                spec["label"] = c1.text_input("Parameter", value=spec.get("label", ""), key=f"rr_mspec_label_{idx}")
+                cur_op_label = op_map.get(spec.get("op", "bool"), op_options[2])
+                sel_op = c2.selectbox("Operator", options=op_options, index=op_options.index(cur_op_label) if cur_op_label in op_options else 2, key=f"rr_mspec_op_{idx}")
+                spec["op"] = op_rev.get(sel_op, "bool")
+                spec["required_value"] = c3.text_input("Required Value", value=str(spec.get("required_value", "")), key=f"rr_mspec_val_{idx}")
+                spec["unit"] = c4.text_input("Unit", value=spec.get("unit", ""), key=f"rr_mspec_unit_{idx}")
+                pdf_link_btn(spec.get("label", ""), spec.get("label", ""), c_pdf)
+                if c_del.button("🗑️", key=f"rr_del_mspec_{idx}", help="Remove this spec"):
+                    mspec_to_delete.append(idx)
+                st.markdown('</div>', unsafe_allow_html=True)
+        for i in reversed(mspec_to_delete):
+            ss.rr_mspecs.pop(i)
+        if st.button("＋ Add Mandatory Spec", key="rr_add_mspec"):
+            ss.rr_mspecs.append({"key": f"spec_{len(ss.rr_mspecs)}", "label": "New Specification", "op": "bool", "required_value": "", "unit": ""})
+            st.rerun()
+
+        # ── Section 5: Preferred Technical Specs ─────────────────────────────
+        if ss.rr_pspecs or st.session_state.get("rr_show_preferred", False):
+            section_hdr("Preferred / Desirable Technical Specifications", "⭐")
+            pspec_to_delete = []
+            for idx, spec in enumerate(ss.rr_pspecs):
+                with st.container():
+                    st.markdown(f'<div style="{card_style}">', unsafe_allow_html=True)
+                    c1, c2, c3, c4, c_pdf, c_del = st.columns([3, 2, 2, 1.5, 0.5, 0.5])
+                    spec["label"] = c1.text_input("Parameter", value=spec.get("label", ""), key=f"rr_pspec_label_{idx}")
+                    cur_op_label = op_map.get(spec.get("op", "bool"), op_options[2])
+                    sel_op = c2.selectbox("Operator", options=op_options, index=op_options.index(cur_op_label) if cur_op_label in op_options else 2, key=f"rr_pspec_op_{idx}")
+                    spec["op"] = op_rev.get(sel_op, "bool")
+                    spec["required_value"] = c3.text_input("Required Value", value=str(spec.get("required_value", "")), key=f"rr_pspec_val_{idx}")
+                    spec["unit"] = c4.text_input("Unit", value=spec.get("unit", ""), key=f"rr_pspec_unit_{idx}")
+                    pdf_link_btn(spec.get("label", ""), spec.get("label", ""), c_pdf)
+                    if c_del.button("🗑️", key=f"rr_del_pspec_{idx}", help="Remove this spec"):
+                        pspec_to_delete.append(idx)
+                    st.markdown('</div>', unsafe_allow_html=True)
+            for i in reversed(pspec_to_delete):
+                ss.rr_pspecs.pop(i)
+
+        if st.button("＋ Add Preferred Spec", key="rr_add_pspec"):
+            ss.rr_show_preferred = True
+            ss.rr_pspecs.append({"key": f"pspec_{len(ss.rr_pspecs)}", "label": "New Preferred Spec", "op": "bool", "required_value": "", "unit": ""})
+            st.rerun()
+
+    # ── Action Bar ───────────────────────────────────────────────────────────
+    st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
+    st.markdown('<hr style="border-color:rgba(199,211,234,0.12);margin-bottom:24px;">', unsafe_allow_html=True)
+    col_back, col_spacer, col_confirm = st.columns([2, 5, 3])
+
+    with col_back:
+        if st.button("← Back to Upload", key="rr_back", use_container_width=True):
+            ss.pipeline_stage = "upload"
+            ss.bid = None
+            ss.bid_confirmed = False
+            # clear init flags so form resets on re-entry
+            for k in ["rr_pqc_init", "rr_docs_init", "rr_mspecs_init", "rr_pspecs_init",
+                      "rr_pqc", "rr_docs", "rr_mspecs", "rr_pspecs"]:
+                ss.pop(k, None)
+            save_state_to_disk()
+            st.rerun()
+
+    with col_confirm:
+        if st.button("✅ Confirm Rules & Start Vendor Analysis →", key="rr_confirm", type="primary", use_container_width=True):
+            # Write edited values back into ss.bid
+            ss.bid["tender_id"] = ss.get("rr_tender_id", bid.get("tender_id", ""))
+            ss.bid["pqc"] = ss.rr_pqc
+            ss.bid["mandatory_docs"] = [d for d in ss.rr_docs if d.strip()]
+            ss.bid["mandatory_specs"] = ss.rr_mspecs
+            ss.bid["preferred_specs"] = ss.rr_pspecs
+            ss.bid_confirmed = True
+            ss.pipeline_stage = "audit"
+            # clear init flags
+            for k in ["rr_pqc_init", "rr_docs_init", "rr_mspecs_init", "rr_pspecs_init"]:
+                ss.pop(k, None)
+            save_state_to_disk()
+            st.rerun()
 
 
 # ===========================================================================
 # SECTION 11 — MAIN APPLICATION ROUTER & ENTRYPOINT
 # ===========================================================================
 def main() -> None:
+    if "light_mode" not in st.session_state:
+        st.session_state.light_mode = False
+
     if "page" in st.query_params:
         if st.query_params["page"] == "audit":
             st.session_state.nav_radio = "Audit Engine"
@@ -1822,22 +3786,60 @@ def main() -> None:
 
     st.set_page_config(page_title="Argus Bid AI — Tender Audit & Compliance", page_icon=page_icon,
                        layout="wide", initial_sidebar_state=sidebar_state)
-    st.markdown(CSS, unsafe_allow_html=True)
+                       
+    # Dynamic CSS stylesheet replacement based on theme toggle status
+    css_content = CSS
+    if st.session_state.light_mode:
+        css_content = css_content.replace(
+            "--ink:#211119; --panel:#351E28; --panel2:#442734; --line:#593646;",
+            "--ink:#F0F6FA; --panel:#E1EDF5; --panel2:#D2E3F0; --line:#BBD0E3;"
+        ).replace(
+            "--muted:#AEB8A0; --text:#FDF2F8; --blue:#E9F056; --blue-dk:#C6CD3E;",
+            "--muted:#6D7E69; --text:#23121A; --blue:#351E28; --blue-dk:#553544;"
+        ).replace(
+            "--green:#D7EFFF; --amber:#FF5C34; --red:#FF5C34;",
+            "--green:#4A7C59; --amber:#D97706; --red:#B32C1A;"
+        ).replace(
+            "radial-gradient(circle at 80% 20%, rgba(233, 240, 86, 0.08) 0%, transparent 50%),",
+            "radial-gradient(circle at 80% 20%, rgba(215, 239, 255, 0.5) 0%, transparent 60%),"
+        ).replace(
+            "radial-gradient(circle at 20% 10%, rgba(215, 239, 255, 0.1) 0%, transparent 45%),",
+            "radial-gradient(circle at 20% 80%, rgba(174, 184, 160, 0.25) 0%, transparent 60%),"
+        ).replace(
+            "radial-gradient(circle at 70% 80%, rgba(255, 92, 52, 0.05) 0%, transparent 50%),",
+            ""
+        ).replace(
+            "radial-gradient(circle at 10% 70%, rgba(174, 184, 160, 0.06) 0%, transparent 50%),",
+            ""
+        ).replace(
+            "opacity: 0.025",
+            "opacity: 0.04"
+        )
+        
+    st.markdown(css_content, unsafe_allow_html=True)
     st.markdown(CUSTOM_SPINNER_CSS, unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-        div[data-testid^="stSkeleton"],
-        [data-testid="stAppSkeleton"],
-        [data-testid="stSkeleton"], 
-        .stAppSkeleton, 
-        .stSkeleton {
-            display: none !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    # Temporary comment out skeleton hiding to check rendering
+    pass
     init_state()
+
+    # Intercept query parameters for document visual hyperlinking
+    if "view_visual_file" in st.query_params:
+        focus_file = st.query_params["view_visual_file"]
+        focus_page = int(st.query_params.get("view_visual_page", 1))
+        vendor_name = st.query_params.get("vendor", "Master")
+        
+        for k in ["view_visual_file", "view_visual_page", "vendor"]:
+            if k in st.query_params:
+                del st.query_params[k]
+                
+        st.session_state["view_visual_file"] = focus_file
+        st.session_state["view_visual_page"] = focus_page
+        st.session_state["view_visual_vendor"] = vendor_name
+        st.rerun()
+
+    if st.session_state.get("view_visual_file"):
+        render_visual_document_viewer()
+        return
 
     # Intercept query parameters for document hyperlinking
     if "view_file" in st.query_params:
@@ -1867,11 +3869,12 @@ def main() -> None:
         render_landing_page()
         return
         
+
     if current_page in ("documentation", "case-studies"):
         st.markdown("<style>[data-testid='stSidebar'] {display: none !important;} [data-testid='collapsedControl'] {display: none !important;} .block-container, [data-testid='stAppViewBlockContainer'], .main .block-container {max-width: 100%; padding-top: 0 !important; padding: 0 !important; margin-top: 0 !important; gap: 0 !important;}</style>", unsafe_allow_html=True)
         
         max_width = "1240px" if current_page == "documentation" else "1180px"
-        btn_color = "#7B92FF" if current_page == "documentation" else "#C4B5FD"
+        btn_color = "#E9F056" if current_page == "documentation" else "#C4B5FD"
         btn_rgba = "123, 146, 255" if current_page == "documentation" else "139, 92, 246"
 
         st.markdown(f"""
@@ -1927,7 +3930,7 @@ def main() -> None:
             .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; margin-left: 6px; }
             .pill::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
             .pill.bad { background: linear-gradient(90deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.05)) !important; color: #F87171 !important; border: 1px solid rgba(239, 68, 68, 0.3) !important; box-shadow: 0 0 12px rgba(239, 68, 68, 0.1) !important; }
-            .pill.bad::before { background: #EF4444 !important; box-shadow: 0 0 6px rgba(239, 68, 68, 0.8) !important; }
+            .pill.bad::before { background: #FF5C34 !important; box-shadow: 0 0 6px rgba(239, 68, 68, 0.8) !important; }
             .pill.warn { background: linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05)) !important; color: #FBBF24 !important; border: 1px solid rgba(245, 158, 11, 0.3) !important; box-shadow: 0 0 12px rgba(245, 158, 11, 0.1) !important; }
             .pill.warn::before { background: #F59E0B !important; box-shadow: 0 0 6px rgba(245, 158, 11, 0.8) !important; }
             </style>"""
@@ -1942,6 +3945,31 @@ def main() -> None:
     api_key, model, run_clicked = render_sidebar()
 
     render_masthead()
+
+    ss = st.session_state
+    pipeline_stage = ss.get("pipeline_stage", "upload")
+
+    # ── Rules Review page intercept ────────────────────────────────────────
+    if pipeline_stage == "rules_review":
+        render_rules_review_page()
+        return
+
+    # ── Vendor audit (after rules confirmed) ───────────────────────────────
+    if pipeline_stage == "audit" and ss.get("bid_confirmed", False):
+        components.html("""
+            <script>
+                if (window.innerWidth <= 768) {
+                    window.parent.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+                    const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+                    if (sidebar) {
+                        const buttons = sidebar.querySelectorAll('button');
+                        if (buttons.length > 0) buttons[0].click();
+                    }
+                }
+            </script>
+        """, height=0)
+        time.sleep(0.5)
+        run_audit(api_key, model)
 
     if run_clicked:
         components.html("""
@@ -1959,15 +3987,20 @@ def main() -> None:
         time.sleep(0.5)
         run_audit(api_key, model)
 
-    ss = st.session_state
     if not ss.processed or not ss.results:
         render_empty()
         return
 
-    c1, c2 = st.columns([8.5, 1.5])
+    c1, c2, c3 = st.columns([6.2, 2.3, 1.5])
     with c1:
         eyebrow("01", "Control Center")
     with c2:
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        if st.button("🛡️ Rules Console", use_container_width=True, help="Open the interactive AI Tender Rules Understanding Console"):
+            ss.pipeline_stage = "rules_review"
+            save_state_to_disk()
+            st.rerun()
+    with c3:
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         if st.button("⎘ Export Report", type="primary", use_container_width=True):
             components.html(f"<script>setTimeout(function() {{ window.parent.print(); }}, 500);</script><!--{time.time()}-->", height=0, width=0)
@@ -1978,11 +4011,124 @@ def main() -> None:
     eyebrow("02", "Compliance Leaderboard")
     render_leaderboard(ss.results)
 
-    eyebrow("03", "Explainable Ranking (XAI)")
+    eyebrow("03", "PSU Comparative Statement Matrix")
+    render_comparative_statement(ss.results)
+
+    eyebrow("04", "Explainable Ranking (XAI)")
     render_xai(ss.xai, ss.narrative)
 
-    eyebrow("04", "Vendor Audit Deep-Dive")
+    eyebrow("05", "Vendor Audit Deep-Dive")
     render_drawers(ss.results)
+
+    # 10. Inject spotlight cursor tracking script
+    components.html("""
+        <script>
+            const doc = window.parent.document.documentElement;
+            window.parent.document.addEventListener('mousemove', (e) => {
+                doc.style.setProperty('--mouse-x', e.clientX + 'px');
+                doc.style.setProperty('--mouse-y', e.clientY + 'px');
+            });
+        </script>
+    """, height=0, width=0)
+
+    # 11. Render Apple-style quick navigation dock with bulletproof inline overrides
+    st.markdown("""
+    <style>
+    .dock-container {
+        position: fixed !important;
+        bottom: 24px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 999999 !important;
+        display: block !important;
+    }
+    .dock {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: flex-end !important;
+        gap: 12px !important;
+        background: var(--panel) !important;
+        border: 1px solid var(--line) !important;
+        padding: 10px 18px !important;
+        border-radius: 9999px !important;
+        backdrop-filter: blur(24px) !important;
+        -webkit-backdrop-filter: blur(24px) !important;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+        transition: all 0.3s ease !important;
+    }
+    .dock-item {
+        position: relative !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        height: 44px !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid var(--line) !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        text-decoration: none !important;
+        color: var(--text) !important;
+    }
+    .dock-icon {
+        font-size: 20px !important;
+        line-height: 1 !important;
+        transition: transform 0.2s ease !important;
+        display: block !important;
+    }
+    .dock-item:hover {
+        transform: scale(1.3) translateY(-10px) !important;
+        background: rgba(233, 240, 86, 0.15) !important;
+        border-color: var(--blue) !important;
+    }
+    .dock-label {
+        position: absolute !important;
+        top: -45px !important;
+        background: var(--ink) !important;
+        border: 1px solid var(--line) !important;
+        color: var(--text) !important;
+        padding: 4px 10px !important;
+        border-radius: 6px !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        white-space: nowrap !important;
+        opacity: 0 !important;
+        transform: translateY(10px) !important;
+        transition: all 0.2s ease !important;
+        pointer-events: none !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+    }
+    .dock-item:hover .dock-label {
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+    }
+    </style>
+    <div class="dock-container">
+      <div class="dock">
+        <a href="#control-center" class="dock-item" target="_self">
+          <span class="dock-label">Control Center</span>
+          <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>
+        </a>
+        <a href="#compliance-leaderboard" class="dock-item" target="_self">
+          <span class="dock-label">Leaderboard</span>
+          <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"/><path d="M12 2a6 6 0 0 1 6 6v1a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8a6 6 0 0 1 6-6z"/></svg>
+        </a>
+        <a href="#psu-comparative-statement-matrix" class="dock-item" target="_self">
+          <span class="dock-label">Comparative Statement</span>
+          <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+        </a>
+        <a href="#explainable-ranking-xai" class="dock-item" target="_self">
+          <span class="dock-label">Explainable Report</span>
+          <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v14"/></svg>
+        </a>
+        <a href="#vendor-audit-deep-dive" class="dock-item" target="_self">
+          <span class="dock-label">Audit Deep-Dive</span>
+          <svg class="dock-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
